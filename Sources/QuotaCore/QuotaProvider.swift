@@ -201,7 +201,7 @@ public enum QuotaError: LocalizedError, Sendable, Equatable {
         case let .missingCredential(field):
             "请先在设置中填写「\(field)」。"
         case .sessionExpired:
-            "登录会话已失效，请重新登录控制台并更新 Cookie。"
+            "登录会话已失效。"
         case let .invalidCredential(reason):
             "凭据无效：\(reason)"
         case let .network(reason):

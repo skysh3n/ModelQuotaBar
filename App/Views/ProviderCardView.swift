@@ -9,13 +9,13 @@ struct ProviderCardView: View {
             header
             if let snapshot = result.snapshot {
                 snapshotBody(snapshot)
-            } else if let error = result.error {
-                errorBody(error)
-            } else {
-                loadingBody
             }
-            if result.snapshot != nil, result.error != nil {
-                staleNotice
+            // 错误一定要显示。会话过期时旧数据还在，如果只在「没有数据」时才报错，
+            // 用户会看到一堆过期数字加一句含糊的「数据可能已过期」，却不知道要去更新 Cookie。
+            if let error = result.error {
+                errorBody(error)
+            } else if result.snapshot == nil {
+                loadingBody
             }
         }
         .padding(12)
@@ -107,7 +107,7 @@ struct ProviderCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if case .sessionExpired = error {
-                Text("重新登录控制台后，在设置里更新 Cookie。")
+                Text("重新登录控制台后，在下方「额度来源」里粘贴新的 Cookie。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -122,11 +122,5 @@ struct ProviderCardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private var staleNotice: some View {
-        Text("数据可能已过期")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
     }
 }
