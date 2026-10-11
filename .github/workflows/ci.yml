@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 显示工具链版本
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: 运行单元测试
+        run: ./scripts/test.sh
+
+      - name: 编译应用与小组件扩展
+        run: NO_SIGN=1 ./scripts/build.sh
+
+      - name: 确认小组件扩展已被嵌入
+        run: |
+          test -d dist/ModelQuotaBar.app/Contents/PlugIns/QuotaWidget.appex
+          test -f dist/ModelQuotaBar.app/Contents/PlugIns/QuotaWidget.appex/Contents/Info.plist
+          echo "小组件扩展已嵌入"
