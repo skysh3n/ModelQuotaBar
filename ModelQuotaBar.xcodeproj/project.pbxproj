@@ -23,7 +23,7 @@
 		8F4C62F8451957253341F357 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB255D8105CBBC1EDF53295 /* SharedStore.swift */; };
 		8A9E5391C67945F9E5E72271 /* FormEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38B66B45E6A2F7C16220140 /* FormEncoding.swift */; };
 		4C01C54F560977C4A73B61DE /* JSONSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29E9E082A892A1C856FAF49D /* JSONSearch.swift */; };
-		388ED43FACB9FF40286A9F89 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AE8E9220204FAEF2A28861 /* KeychainCredentialStore.swift */; };
+		1B0DDC80008C123F53452BFE /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D0F5B2598BBB2FCAD96053 /* CredentialStore.swift */; };
 		F0491DB4C98A8BA1BCFEE0F8 /* AliyunConsoleGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */; };
 		A4267A73A74595193FBE2D02 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
 		7D540B781D4AFE876984F81A /* QwenTokenPlanRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4EB5A1490582BEFAD01670A /* QwenTokenPlanRegion.swift */; };
@@ -37,7 +37,7 @@
 		AEE1BF40F895089E3976CB0C /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB255D8105CBBC1EDF53295 /* SharedStore.swift */; };
 		772F977B45CCABAC88251E34 /* FormEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38B66B45E6A2F7C16220140 /* FormEncoding.swift */; };
 		6F375131483F0B9C5FAC474B /* JSONSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29E9E082A892A1C856FAF49D /* JSONSearch.swift */; };
-		D958324D2F81288752F8DAD4 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AE8E9220204FAEF2A28861 /* KeychainCredentialStore.swift */; };
+		C91FF52BC8681D824E858304 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D0F5B2598BBB2FCAD96053 /* CredentialStore.swift */; };
 		6E676EC6BE8ADD3F07674D93 /* AliyunConsoleGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */; };
 		EF1D13C72BA678EA65102381 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
 		024CB13C214B63C94FADEACD /* QwenTokenPlanRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4EB5A1490582BEFAD01670A /* QwenTokenPlanRegion.swift */; };
@@ -118,10 +118,10 @@
 			path = "JSONSearch.swift";
 			sourceTree = "<group>";
 		};
-		E1AE8E9220204FAEF2A28861 /* PBXFileReference */ = {
+		31D0F5B2598BBB2FCAD96053 /* PBXFileReference */ = {
 			isa = "PBXFileReference";
 			lastKnownFileType = "sourcecode.swift";
-			path = "KeychainCredentialStore.swift";
+			path = "CredentialStore.swift";
 			sourceTree = "<group>";
 		};
 		AD9A6D5A5B82F8BA5A2C420F /* PBXFileReference */ = {
@@ -267,7 +267,7 @@
 			children = (
 				A38B66B45E6A2F7C16220140 /* FormEncoding.swift */,
 				29E9E082A892A1C856FAF49D /* JSONSearch.swift */,
-				E1AE8E9220204FAEF2A28861 /* KeychainCredentialStore.swift */,
+				31D0F5B2598BBB2FCAD96053 /* CredentialStore.swift */,
 			);
 			path = "Support";
 			sourceTree = "<group>";
@@ -490,7 +490,7 @@
 				"8F4C62F8451957253341F357",
 				"8A9E5391C67945F9E5E72271",
 				"4C01C54F560977C4A73B61DE",
-				"388ED43FACB9FF40286A9F89",
+				"1B0DDC80008C123F53452BFE",
 				"F0491DB4C98A8BA1BCFEE0F8",
 				"A4267A73A74595193FBE2D02",
 				"7D540B781D4AFE876984F81A",
@@ -511,7 +511,7 @@
 				"AEE1BF40F895089E3976CB0C",
 				"772F977B45CCABAC88251E34",
 				"6F375131483F0B9C5FAC474B",
-				"D958324D2F81288752F8DAD4",
+				"C91FF52BC8681D824E858304",
 				"6E676EC6BE8ADD3F07674D93",
 				"EF1D13C72BA678EA65102381",
 				"024CB13C214B63C94FADEACD",

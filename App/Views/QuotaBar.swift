@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// 额度进度条。按「剩余比例」着色，越少越刺眼。
+/// 额度进度条。
+///
+/// 填充的是**剩余**比例，和旁边的「剩 X%」文案保持同一个方向——
+/// 否则会出现「写着剩 100%、条却是空的」这种自相矛盾的画面。
+/// 颜色也按剩余比例走，越少越刺眼。
 struct QuotaBar: View {
-    let usedRatio: Double
+    let remainingRatio: Double
     var height: CGFloat = 6
 
     var body: some View {
@@ -11,8 +15,8 @@ struct QuotaBar: View {
                 Capsule()
                     .fill(.quaternary)
                 Capsule()
-                    .fill(QuotaPalette.color(remainingRatio: 1 - usedRatio))
-                    .frame(width: max(0, geometry.size.width * usedRatio))
+                    .fill(QuotaPalette.color(remainingRatio: remainingRatio))
+                    .frame(width: max(0, geometry.size.width * remainingRatio))
             }
         }
         .frame(height: height)
@@ -37,7 +41,7 @@ struct QuotaWindowRow: View {
                     .monospacedDigit()
                     .foregroundStyle(QuotaPalette.color(remainingRatio: window.remainingRatio))
             }
-            QuotaBar(usedRatio: window.usedRatio, height: isPrimary ? 7 : 5)
+            QuotaBar(remainingRatio: window.remainingRatio, height: isPrimary ? 7 : 5)
             HStack(spacing: 6) {
                 if let total = window.totalQuota, let remaining = Format.remainingCredits(of: window) {
                     Text("\(Format.credits(remaining)) / \(Format.credits(total)) \(window.unit)")

@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// 应用设置。凭据不在这里，见 `KeychainCredentialStore`。
+/// 应用设置。凭据不在这里，见 `CredentialStore`。
 @MainActor
 @Observable
 public final class AppSettings {
@@ -49,7 +49,7 @@ public final class AppSettings {
             enabledProviderIDs.append(id)
         } else {
             enabledProviderIDs.removeAll { $0 == id }
-            KeychainCredentialStore.delete(for: id)
+            CredentialStore.delete(for: id)
         }
     }
 

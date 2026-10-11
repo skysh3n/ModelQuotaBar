@@ -33,7 +33,7 @@ struct ProviderSettingsCard: View {
         .padding(14)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
         .task {
-            credential = KeychainCredentialStore.loadCredential(for: providerID)
+            credential = CredentialStore.loadCredential(for: providerID)
         }
     }
 
@@ -55,7 +55,7 @@ struct ProviderSettingsCard: View {
                 set: { newValue in
                     environment.settings.setEnabled(newValue, for: providerID)
                     if newValue {
-                        credential = KeychainCredentialStore.loadCredential(for: providerID)
+                        credential = CredentialStore.loadCredential(for: providerID)
                         testState = .idle
                     } else {
                         credential = ProviderCredential()
@@ -144,7 +144,7 @@ struct ProviderSettingsCard: View {
 
     private func persist() {
         do {
-            try KeychainCredentialStore.save(credential, for: providerID)
+            try CredentialStore.save(credential, for: providerID)
             saveError = nil
         } catch {
             saveError = error.localizedDescription

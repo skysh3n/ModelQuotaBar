@@ -68,7 +68,7 @@ public final class QuotaStore {
 
         let providers = settings.activeProviders
         let credentials = Dictionary(uniqueKeysWithValues: providers.map {
-            ($0.metadata.id, KeychainCredentialStore.loadCredential(for: $0.metadata.id))
+            ($0.metadata.id, CredentialStore.loadCredential(for: $0.metadata.id))
         })
 
         let updates = await withTaskGroup(of: (ProviderID, QuotaSnapshot?, QuotaError?).self) { group in

@@ -80,7 +80,7 @@ struct QuotaWidgetEntryView: View {
 
 // MARK: - 小尺寸
 
-private struct SmallWidgetView: View {
+struct SmallWidgetView: View {
     let snapshot: WidgetSnapshot
     let mode: WidgetSettings.DisplayMode
 
@@ -111,7 +111,7 @@ private struct SmallWidgetView: View {
 
 // MARK: - 中 / 大尺寸
 
-private struct MediumWidgetView: View {
+struct MediumWidgetView: View {
     let snapshot: WidgetSnapshot
     let mode: WidgetSettings.DisplayMode
 
@@ -121,6 +121,7 @@ private struct MediumWidgetView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
+            // 左半边：主窗口，和小尺寸保持同一套视觉。
             VStack(alignment: .leading, spacing: 6) {
                 Text(snapshot.vendor)
                     .font(.caption)
@@ -142,11 +143,12 @@ private struct MediumWidgetView: View {
                 Text("\(snapshot.primaryTitle)\(mode == .remainingPercent ? "剩余" : "已用")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                WidgetProgressBar(remainingRatio: snapshot.primaryRemainingRatio)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // 右半边：其余时间窗 + 套餐有效期。
             VStack(alignment: .leading, spacing: 8) {
-                WidgetProgressBar(remainingRatio: snapshot.primaryRemainingRatio)
                 ForEach(snapshot.secondaryWindows) { window in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -174,7 +176,7 @@ private struct MediumWidgetView: View {
     }
 }
 
-private struct EmptyWidgetView: View {
+struct EmptyWidgetView: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "gauge.with.dots.needle.33percent")
@@ -194,6 +196,7 @@ private struct EmptyWidgetView: View {
 // MARK: - 组件
 
 private struct WidgetProgressBar: View {
+    /// 填充的是剩余比例，与文案「剩 X%」同向。
     let remainingRatio: Double
     var height: CGFloat = 5
 
@@ -203,7 +206,7 @@ private struct WidgetProgressBar: View {
                 Capsule().fill(.quaternary)
                 Capsule()
                     .fill(WidgetPalette.color(remainingRatio: remainingRatio))
-                    .frame(width: max(0, geometry.size.width * (1 - remainingRatio)))
+                    .frame(width: max(0, geometry.size.width * remainingRatio))
             }
         }
         .frame(height: height)

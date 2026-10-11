@@ -29,7 +29,8 @@ enum Format {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: now) + "后重置"
+        // 格式化结果本身已经带了「后」（如「3小时后」），这里只补动词。
+        return formatter.localizedString(for: date, relativeTo: now) + "重置"
     }
 
     /// `2026年10月11日 21:30` 这类绝对时间，用于「上次更新」。
