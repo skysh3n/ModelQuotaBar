@@ -12,15 +12,20 @@ import Foundation
 /// 安全性低于钥匙串——同一个用户账号下的进程仍可读——但对一个只用来看自己套餐余量的
 /// 工具来说，这个折中是划算的，换来的是完全无感的配置体验。
 public enum CredentialStore {
+    /// 放在自己的子目录里：`credentials.json` 这个名字太通用，
+    /// 直接丢在 Application Support 根目录会跟别的应用撞名。
+    private static let directoryName = "ModelQuotaBar"
     private static let fileName = "credentials.json"
 
     private static var fileURL: URL? {
-        guard let directory = try? FileManager.default.url(
+        guard let base = try? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true)
         else { return nil }
+        let directory = base.appendingPathComponent(directoryName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent(fileName)
     }
 

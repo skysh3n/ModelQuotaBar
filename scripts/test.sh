@@ -11,7 +11,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-BUILD_DIR="$ROOT/.build/manual-tests"
+# 构建目录放仓库外：仓库若位于 iCloud 同步目录（如「桌面」），
+# FileProvider 附加的扩展属性会干扰产物。
+BUILD_DIR="${TEST_BUILD_DIR:-$HOME/Library/Caches/ModelQuotaBar/tests}"
 ARCH="$(uname -m)"
 MIN_MACOS="14.0"
 

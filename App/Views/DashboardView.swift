@@ -170,7 +170,7 @@ struct DashboardView: View {
 
             if !SharedStore.isShared {
                 Label(
-                    "App Group 未生效，小组件读不到数据。请在 Xcode 里为两个 target 选择同一个开发团队。",
+                    "写不进小组件的数据目录，桌面上的小组件会一直显示空状态。",
                     systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)

@@ -11,13 +11,14 @@
 - **桌面小组件**：小尺寸显示主窗口剩余百分比，中尺寸额外列出其余窗口。
 - **主应用**：额度明细、Cookie 配置、刷新间隔、小组件展示方式。
 - **多厂商架构**：`QuotaProvider` 协议 + 自动生成的配置表单，接新厂商不用改 UI。
-- **凭据不出沙盒**：Cookie 存在应用自己的沙盒容器里，权限位 0600，其它应用读不到。
+- **凭据本地保存**：Cookie 存在 `~/Library/Application Support/ModelQuotaBar/credentials.json`，权限位 0600。
+- **零额外能力依赖**：不需要 App Group、不需要登录 Apple 开发者网站，Xcode 里选一次团队就能构建。
 
 ## 系统要求
 
 - macOS 14 (Sonoma) 或更高
-- 构建需要 Xcode（小组件扩展必须由系统认可的签名加载）
-- 运行**不需要**开发者账号：用 Xcode 免费 Apple ID 生成的证书即可
+- 构建需要 Xcode，并且需要在 Xcode 里登录一个 **Apple ID（免费的就行）** 用于签名
+- 本仓库只发源码：面向愿意自己构建的使用者。要给不懂 Xcode 的人用，见「已知限制」。
 
 ## 构建与安装
 
@@ -29,9 +30,9 @@ open ModelQuotaBar.xcodeproj
 
 在 Xcode 里：
 
-1. 左侧选中 **ModelQuotaBar** 工程 → **TARGETS** 下的 `ModelQuotaBar` → **Signing & Capabilities** → **Team** 选上你的账号。
-2. 对 `QuotaWidget` target 做同样的操作，**两个 target 必须选同一个 Team**（它们靠 App Group 交换数据）。
-3. 如果 `App Groups` 那一栏报红，把 `group.com.skysh3n.ModelQuotaBar` 改成你自己的（比如 `group.<你的TeamID>.ModelQuotaBar`），同时改 `Sources/QuotaCore/SharedStore.swift` 里的 `appGroupID`。
+1. 用 Apple ID 登录 Xcode（免费即可）：`Xcode → Settings… → Accounts → +`。
+2. 左侧选中 **ModelQuotaBar** 工程 → **TARGETS** 下的 `ModelQuotaBar` → **Signing & Capabilities** → **Team** 选上你的账号。
+3. 对 `QuotaWidget` target 做同样的操作。两个 target 能签名即可，**不需要 App Group 之类的额外能力**。
 4. 直接按 ⌘R 运行。
 
 命令行构建：
@@ -40,6 +41,24 @@ open ModelQuotaBar.xcodeproj
 TEAM_ID=你的TeamID ./scripts/build.sh
 cp -R dist/ModelQuotaBar.app /Applications/
 ```
+
+> **iCloud 同步目录的坑。** 如果仓库放在「桌面」「文档」这类开了 iCloud 同步的目录里，FileProvider 会给构建产物附加扩展属性，`codesign` 会报 `resource fork, Finder information, or similar detritus not allowed`。脚本默认把构建目录放到仓库外（`~/Library/Caches/ModelQuotaBar/`）来避开；若仍遇到，把仓库移到不同步的目录即可。
+
+### 为什么必须签名
+
+WidgetKit 扩展只有在带**有效代码签名**时才会被系统加载；未签名或 ad-hoc 签名的扩展会被 `pluginkit` 静默忽略，小组件库里根本搜不到。免费 Apple ID 登录后 Xcode 生成的证书就够自己用。
+
+### 数据怎么从主应用流到小组件
+
+小组件扩展必须带沙盒权限（没有它系统不加载），而沙盒应用只能读自己的容器；主应用则刻意**不开沙盒**，于是可以直接写进小组件的容器目录：
+
+```
+~/Library/Containers/com.skysh3n.ModelQuotaBar.widget/Data/Library/Application Support/ModelQuotaBar/
+```
+
+主应用每次刷新后把额度快照写进这个目录并通知系统重画小组件，小组件只读不写。这样就不需要 App Group——App Group 是受限权限，用了就必须有 provisioning profile，也就必须登录 Apple ID 并让 Xcode 联网生成 profile，对「clone 下来自己构建」的使用者门槛太高。
+
+注意：改 `QuotaWidget` 的 bundle ID 时，要同步改 `Sources/QuotaCore/SharedStore.swift` 里的 `widgetBundleIdentifier`，共享目录就是从它推出来的。
 
 ## 配置：拿到控制台 Cookie
 
@@ -61,21 +80,22 @@ cp -R dist/ModelQuotaBar.app /Applications/
 
 ## 关于凭据存储
 
-Cookie 等价于你的阿里云登录态，本来最该放钥匙串。但这个项目是由使用者各自本地构建、各用自己的证书签名的，而**钥匙串按代码签名识别调用方**——每次重新编译签名都会变，macOS 会把程序当成另一个应用，于是每次启动都弹一次系统密码框。为了避开这个交互，凭据改为存在应用自己的沙盒容器里：
+Cookie 等价于你的阿里云登录态，本来最该放钥匙串。但这个项目是由使用者各自本地构建、各用自己的证书签名的，而**钥匙串按代码签名识别调用方**——每次重新编译签名都会变，macOS 会把程序当成另一个应用，于是每次启动都弹一次系统密码框。为了避开这个交互，凭据改为存成文件：
 
 ```
-~/Library/Containers/com.skysh3n.ModelQuotaBar/Data/Library/Application Support/credentials.json
+~/Library/Application Support/ModelQuotaBar/credentials.json
 ```
 
-沙盒保证其它应用读不到它，文件权限位也收成了 `0600`。这比钥匙串弱一档（同一用户账号下的进程仍可读），对一个只用来看自己套餐余量的工具是划算的折中。如果你不接受，可以改回 `SecItem*` 接口，代价是每次重新编译都要重新授权。
+权限位收成 `0600`，只有属主可读写。这比钥匙串弱一档（同一用户账号下的进程仍可读），对一个只用来看自己套餐余量的工具是划算的折中。如果你不接受，可以改回 `SecItem*` 接口，代价是每次重新编译都要重新授权。
 
 ## 已知限制
 
+- **只面向愿意自己构建的使用者**。WidgetKit 扩展必须由 Apple 签发的证书签名才会被系统加载；要把「双击就能用」的 .dmg 发给普通用户，需要付费 Apple Developer Program（$99/年）的 Developer ID 证书并做公证。本项目不打算付这笔钱，所以只发源码。
 - **只支持 Token Plan 个人版**。团队版走的是另一套 BSS 接口，尚未支持。
 - **不支持 Coding Plan**。它是按请求次数计费的另一条产品线。
 - **不显示 token 消耗**。官方明确不提供该数据，套餐只按 Credits 抵扣。
 - 用量接口是控制台内部接口，阿里云改动接口时可能失效。失效时错误提示会尽量说明原因。
-- 小组件不能自己发网络请求（沙盒 + 刷新预算限制），数据永远由主应用抓取后写入共享容器。
+- 小组件不能自己发网络请求（沙盒 + 刷新预算限制），数据永远由主应用抓取后写入共享目录，所以主应用得保持运行。
 
 ## 新增一个厂商
 
@@ -108,9 +128,9 @@ Cookie 等价于你的阿里云登录态，本来最该放钥匙串。但这个�
 ## 开发
 
 ```bash
-./scripts/test.sh     # 编译并运行单元测试
-./scripts/build.sh    # 构建 .app
-NO_SIGN=1 ./scripts/build.sh   # 只验证能否编译
+./scripts/test.sh                    # 编译并运行单元测试
+TEAM_ID=你的TeamID ./scripts/build.sh  # 用你的证书签名构建 .app
+NO_SIGN=1 ./scripts/build.sh         # 只验证能否编译（产物的小组件不会被系统加载）
 ```
 
 测试不依赖 XCTest，用的是 `Tests/QuotaCoreTests/TestSupport.swift` 里自带的小型执行器。这样做是因为只装 Command Line Tools 的机器上既没有 `XCTest.framework` 也没有 `xcrun xctest`，而本项目希望在任何 Mac 上都能跑测试。
@@ -119,11 +139,11 @@ NO_SIGN=1 ./scripts/build.sh   # 只验证能否编译
 
 ```
 ModelQuotaBar.xcodeproj/      Xcode 工程（两个 target）
-App/                          主应用：窗口界面、配置、后台刷新
-Widget/                       WidgetKit 小组件扩展
-Sources/QuotaCore/            与界面无关的核心：模型、Provider 协议、网关客户端
+App/                          主应用：窗口界面、配置、后台刷新（不开沙盒）
+Widget/                       WidgetKit 小组件扩展（只带沙盒权限）
+Sources/QuotaCore/            与界面无关的核心：模型、Provider 协议、网关客户端、共享存储
 Tests/QuotaCoreTests/         单元测试
-scripts/                      构建与测试脚本
+scripts/                      构建、测试与图标生成脚本
 ```
 
 `Sources/QuotaCore` 被两个 target 各自直接编译进自己的模块，而不是做成 framework——小组件扩展依赖 framework 需要在工程里做嵌入，收益不大。

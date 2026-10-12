@@ -2,40 +2,48 @@ import Foundation
 
 /// 主应用与小组件之间的共享存储。
 ///
-/// 小组件跑在独立进程、独立沙盒里，拿不到主应用的任何东西，两边只能通过
-/// App Group 容器交换数据：主应用负责抓取额度并写入，小组件只负责读取和渲染。
+/// 小组件跑在独立进程里，拿不到主应用的任何东西，两边只能通过一个约定位置交换数据：
+/// 主应用负责抓取额度并写入，小组件只负责读取和渲染。
 ///
-/// 没配好 App Group 时（例如没选开发团队就本地跑），退化成各自的目录，
-/// 此时主应用照常工作，小组件显示空状态——不会崩，也不会互相干扰。
+/// **共享位置是小组件的沙盒容器。** 小组件扩展必须带沙盒权限（否则系统根本不加载它），
+/// 而沙盒应用只能读自己的容器；主应用则不开沙盒，可以直接往那个路径写。于是：
+///
+/// - 主应用（无沙盒）写 `~/Library/Containers/<小组件 id>/Data/Library/Application Support/ModelQuotaBar/`
+/// - 小组件（有沙盒）读自己的容器，也就是同一个目录
+///
+/// 这样就不需要 App Group——App Group 是受限权限，用了就必须有 provisioning profile，
+/// 也就必须登录 Apple ID，对「clone 下来自己构建」的使用者门槛太高。
 public enum SharedStore {
-    /// 与 Xcode 工程里两个 target 的 App Groups 能力保持一致。
-    public static let appGroupID = "group.com.skysh3n.ModelQuotaBar"
+    /// 小组件扩展的 bundle ID。在 Xcode 里改 bundle ID 时必须同步改这里，
+    /// 共享目录就是从它推出来的。
+    public static let widgetBundleIdentifier = "com.skysh3n.ModelQuotaBar.widget"
 
+    private static let subdirectory = "ModelQuotaBar"
     private static let snapshotFileName = "quota-snapshot.json"
     private static let settingsFileName = "widget-settings.json"
 
-    /// 共享目录。优先 App Group 容器。
     public static var containerURL: URL? {
-        if let url = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID)
-        {
-            return url
+        let base = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Containers/\(widgetBundleIdentifier)/Data/Library/Application Support",
+                isDirectory: true)
+        let directory = base.appendingPathComponent(subdirectory, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        } catch {
+            return nil
         }
-        return try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true)
     }
 
     private static func url(for fileName: String) -> URL? {
         containerURL?.appendingPathComponent(fileName)
     }
 
-    /// 是否真的共享成功。为 false 时说明 App Group 没生效，小组件会读到空数据。
+    /// 共享目录是否可写。为 false 时小组件会读到空数据。
     public static var isShared: Bool {
-        FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID) != nil
+        guard let url = containerURL else { return false }
+        return FileManager.default.isWritableFile(atPath: url.path)
     }
 
     // MARK: - 额度快照
