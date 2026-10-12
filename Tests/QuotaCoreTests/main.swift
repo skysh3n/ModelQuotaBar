@@ -6,4 +6,5 @@ exit(TestRunner.run([
     ConsoleGatewayTests.suite,
     JSONSearchTests.suite,
     QuotaWindowTests.suite,
+    SharedStoreTests.suite,
 ]))

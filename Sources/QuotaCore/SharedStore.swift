@@ -23,14 +23,45 @@ public enum SharedStore {
     private static let settingsFileName = "widget-settings.json"
 
     public static var containerURL: URL? {
-        let base = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(
+        let fileManager = FileManager.default
+        let appSupport = try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true)
+        let resolved = resolveContainerURL(
+            appSupport: appSupport,
+            home: fileManager.homeDirectoryForCurrentUser)
+        return ensureDirectory(resolved)
+    }
+
+    /// 按「当前跑在哪个进程里」解析共享目录。纯函数，不碰文件系统，方便测试。
+    ///
+    /// 这是整个共享方案里最容易踩的坑：沙盒进程的 home 目录**就是它自己的容器**，
+    /// 所以 `.applicationSupportDirectory` 在两个进程里指向完全不同的位置。
+    /// 如果两边都用同一套拼法，小组件会把容器路径再套一层、读到一个永远不存在的目录，
+    /// 表现就是小组件一直显示「还没取到额度」。
+    ///
+    /// - 小组件进程（有沙盒）：`appSupport` 已经落在小组件容器里，直接用它。
+    /// - 主应用进程（无沙盒）：`appSupport` 是真实的 `~/Library/Application Support`，
+    ///   需要自己拼出小组件容器的路径往里写。
+    static func resolveContainerURL(appSupport: URL?, home: URL) -> URL {
+        let marker = "/Containers/\(widgetBundleIdentifier)/"
+        let base: URL
+        if let appSupport, appSupport.path.contains(marker) {
+            base = appSupport
+        } else {
+            base = home.appendingPathComponent(
                 "Library/Containers/\(widgetBundleIdentifier)/Data/Library/Application Support",
                 isDirectory: true)
-        let directory = base.appendingPathComponent(subdirectory, isDirectory: true)
+        }
+        return base.appendingPathComponent(subdirectory, isDirectory: true)
+    }
+
+    private static func ensureDirectory(_ url: URL) -> URL? {
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            return directory
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
         } catch {
             return nil
         }
