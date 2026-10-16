@@ -4,15 +4,16 @@ import SwiftUI
 /// 处理后台模式与「关窗口不退出」。
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard AppEnvironment.isBackgroundMode else { return }
+        // 必须在窗口创建之前设成 accessory，否则后台进程启动时会先亮一下 Dock 图标。
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard AppEnvironment.isBackgroundMode else { return }
-        // 无窗口后台模式：不进 Dock，并把可能自动开出的窗口关掉。
-        NSApp.setActivationPolicy(.accessory)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            MainActor.assumeIsolated {
-                NSApp.windows.forEach { $0.close() }
-            }
-        }
+        // 无窗口后台模式：把自动开出的窗口立即关掉（此时 Dock 图标已不显示）。
+        NSApp.windows.forEach { $0.close() }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
