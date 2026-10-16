@@ -4,7 +4,6 @@ import WidgetKit
 @main
 struct QuotaWidgetBundle: WidgetBundle {
     var body: some Widget {
-        QuotaSmallWidget()
-        QuotaMediumWidget()
+        QuotaWidget()
     }
 }

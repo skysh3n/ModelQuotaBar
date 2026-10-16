@@ -99,7 +99,7 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。组件库里有两条：「大模型额度」是小尺寸（选一个来源），「大模型额度 · 多来源」是中尺寸（可勾选多个并排显示）。加进来后右键点它 →「编辑」可改来源。")
+            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。加进来后右键点它 →「编辑“大模型额度”」勾选来源（可多选）：小尺寸显示勾选的第一个，中尺寸并排显示全部勾选的。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

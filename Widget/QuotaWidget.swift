@@ -61,22 +61,8 @@ private func quotaRefreshPolicy() -> TimelineReloadPolicy {
     .after(Date().addingTimeInterval(15 * 60))
 }
 
-/// 小尺寸的时间线 Provider：单选来源。
-struct QuotaSmallTimelineProvider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> QuotaEntry { .placeholder }
-
-    func snapshot(for configuration: SelectOneSourceIntent, in context: Context) async -> QuotaEntry {
-        context.isPreview ? .placeholder : await readQuotaEntry(sources: [configuration.source])
-    }
-
-    func timeline(for configuration: SelectOneSourceIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        let entry = await readQuotaEntry(sources: [configuration.source])
-        return Timeline(entries: [entry], policy: quotaRefreshPolicy())
-    }
-}
-
-/// 中尺寸的时间线 Provider：多选来源。
-struct QuotaMediumTimelineProvider: AppIntentTimelineProvider {
+/// 时间线 Provider。小/中尺寸共用一套取数逻辑，只是渲染时取的数量不同。
+struct QuotaTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> QuotaEntry { .placeholder }
 
     func snapshot(for configuration: SelectSourcesIntent, in context: Context) async -> QuotaEntry {
@@ -298,39 +284,20 @@ private enum WidgetPalette {
 
 // MARK: - 配置
 
-/// 小尺寸：只显示一个来源，所以配置是**单选**。
-struct QuotaSmallWidget: Widget {
-    static let kind = "QuotaSmallWidget"
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: Self.kind,
-            intent: SelectOneSourceIntent.self,
-            provider: QuotaSmallTimelineProvider()
-        ) { entry in
-            QuotaWidgetEntryView(entry: entry)
-        }
-        .configurationDisplayName("大模型额度")
-        .description("显示单个来源的剩余额度或账户余额。右键可切换来源。")
-        .supportedFamilies([.systemSmall])
-    }
-}
-
-/// 中尺寸：能并排显示多个来源，所以配置是**多选**。
-///
-/// 之所以拆成另一个小组件类型而不是给同一个类型的配置加判断：
-/// 配置项绑定在「小组件类型」上，intent 拿不到尺寸信息，没法做成随尺寸变化。
-struct QuotaMediumWidget: Widget {
-    static let kind = "QuotaMediumWidget"
+/// 一个小组件同时支持小/中尺寸，配置为**多选**来源：
+/// 小尺寸取勾选里的第一个，中尺寸并列显示全部勾选的。
+struct QuotaWidget: Widget {
+    static let kind = "QuotaWidget"
     var body: some WidgetConfiguration {
         AppIntentConfiguration(
             kind: Self.kind,
             intent: SelectSourcesIntent.self,
-            provider: QuotaMediumTimelineProvider()
+            provider: QuotaTimelineProvider()
         ) { entry in
             QuotaWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("大模型额度 · 多来源")
-        .description("并排显示多个来源，勾选几个就显示几个。")
-        .supportedFamilies([.systemMedium])
+        .configurationDisplayName("大模型额度")
+        .description("小尺寸显示一个来源，中尺寸并排显示多个。右键可勾选来源。")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
