@@ -1,66 +1,16 @@
-import AppIntents
 import SwiftUI
 import WidgetKit
 
-/// 小组件要显示哪个来源。
-///
-/// macOS 桌面小组件是静态的，不能滑动翻页，系统只支持「长按 → 编辑」选来源。
-/// 新增厂商时记得在这里加 case、display 和 `matches`，以及下方 placeholder。
-enum WidgetSource: String, Codable, CaseIterable, AppEnum {
-    case auto
-    case qwen
-    case deepseek
-
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "显示来源")
-    static let caseDisplayRepresentations: [WidgetSource: DisplayRepresentation] = [
-        .auto: "自动",
-        .qwen: "通义千问",
-        .deepseek: "DeepSeek",
-    ]
-
-    /// 这个来源是否命中某个快照。
-    func matches(_ snapshot: WidgetSnapshot) -> Bool {
-        switch self {
-        case .auto: true
-        case .qwen: snapshot.id == "qwen-token-plan"
-        case .deepseek: snapshot.id == "deepseek"
-        }
-    }
-
-    /// 过滤出要显示的来源。
-    func filtered(_ snapshots: [WidgetSnapshot]) -> [WidgetSnapshot] {
-        snapshots.filter { matches($0) }
-    }
-}
-
-/// 小组件的配置意图：长按 → 编辑小组件时弹出的来源选择器。
-struct SelectSourceIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "选择来源"
-
-    @Parameter(title: "显示来源", default: .auto)
-    var source: WidgetSource
-
-    func perform() async throws -> some IntentResult {
-        .result()
-    }
-}
-
-/// 一个小组件时间线条目。携带选中的来源和所有有数据的快照。
+/// 一个小组件时间线条目，携带已经按来源过滤好的快照。
 struct QuotaEntry: TimelineEntry {
     let date: Date
-    let source: WidgetSource
     let snapshots: [WidgetSnapshot]
-
-    var displayedSnapshots: [WidgetSnapshot] {
-        source.filtered(snapshots)
-    }
 }
 
 extension QuotaEntry {
     static var placeholder: QuotaEntry {
         QuotaEntry(
             date: Date(),
-            source: .auto,
             snapshots: [
                 WidgetSnapshot(
                     id: "qwen", vendor: "通义千问", planName: "Pro 专业版",
@@ -96,7 +46,7 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
     }
 
     private static func readEntry(source: WidgetSource) -> QuotaEntry {
-        QuotaEntry(date: Date(), source: source, snapshots: SharedStore.loadSnapshots())
+        QuotaEntry(date: Date(), snapshots: source.filtered(SharedStore.loadSnapshots()))
     }
 }
 
@@ -106,12 +56,12 @@ struct QuotaWidgetEntryView: View {
 
     var body: some View {
         Group {
-            if entry.displayedSnapshots.isEmpty {
+            if entry.snapshots.isEmpty {
                 EmptyWidgetView()
             } else if family == .systemMedium || family == .systemLarge {
-                MediumWidgetView(snapshots: entry.displayedSnapshots)
+                MediumWidgetView(snapshots: entry.snapshots)
             } else {
-                SmallWidgetView(snapshot: entry.displayedSnapshots[0])
+                SmallWidgetView(snapshot: entry.snapshots[0])
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
@@ -265,7 +215,7 @@ struct QuotaWidget: Widget {
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度")
-        .description("显示大模型套餐的剩余额度与账户余额。长按可切换来源。")
+        .description("显示大模型套餐的剩余额度与账户余额。右键小组件可切换来源。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 
