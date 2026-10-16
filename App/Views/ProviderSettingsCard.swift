@@ -177,6 +177,8 @@ struct ProviderSettingsCard: View {
                             credential[spec.targetFieldID] = value
                             persist()
                             isShowingWebLogin = false
+                            // 记下「这个来源用的是网页登录态」，好让后台保活接手。
+                            environment.didCaptureLogin(provider: providerID)
                             runTest()
                         },
                         onCancel: { isShowingWebLogin = false })
