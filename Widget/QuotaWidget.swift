@@ -161,40 +161,29 @@ struct MediumWidgetView: View {
     }
 }
 
-/// 一个来源一行，两行结构完全对称：
-/// 标题行是「厂商 · 说明」（窗口型跟窗口名，余额型跟「账户余额」），
-/// 第二行是进度条（余额型没有比例，用等高的空白占位，保证两行对齐）。
+/// 一个来源一行。左侧两行小字（厂商 / 说明），右侧数值**垂直居中**于这两行。
 private struct SourceRow: View {
     let snapshot: WidgetSnapshot
 
-    private var title: String {
-        if let window = snapshot.primaryTitle {
-            return "\(snapshot.vendor) · \(window)"
-        }
-        return "\(snapshot.vendor) · 账户余额"
+    private var subtitle: String {
+        snapshot.primaryTitle.map { "\($0)剩余" } ?? "账户余额"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let ratio = snapshot.primaryRemainingRatio {
-                    Text(String(format: "%.1f%%", ratio * 100))
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
-                } else if let balance = snapshot.balanceRemaining {
-                    Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(snapshot.vendor)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
+                Spacer(minLength: 8)
+                valueText
             }
+            // 第二行统一高度：窗口型是进度条，余额型留等宽空白，两行等高。
             Group {
                 if let ratio = snapshot.primaryRemainingRatio {
                     WidgetProgressBar(remainingRatio: ratio, height: 4)
@@ -203,6 +192,22 @@ private struct SourceRow: View {
                 }
             }
             .frame(height: 4, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var valueText: some View {
+        if let ratio = snapshot.primaryRemainingRatio {
+            Text(String(format: "%.1f%%", ratio * 100))
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
+        } else if let balance = snapshot.balanceRemaining {
+            Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 }
