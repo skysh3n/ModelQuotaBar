@@ -202,6 +202,17 @@ scripts/                      构建、测试与图标生成脚本
 
 本项目通过非公开的控制台接口读取**你自己账号**的套餐用量，用途是方便自己看余额。请仅查询自己的数据，不要用于批量抓取或转发给第三方。接口由阿里云控制，可能随时变更。
 
+## 致谢
+
+百炼控制台网关没有公开文档，本项目的接口细节参考了下面两个项目（均为 MIT 授权）：
+
+- [steipete/CodexBar](https://github.com/steipete/CodexBar)
+- [KS-OTO/tracking-llm-plan-usage](https://github.com/KS-OTO/tracking-llm-plan-usage)
+
+参考的是**接口契约**这类事实性信息（网关地址、请求信封结构、字段含义、Consumption 优先级等），代码与界面均为自行实现——本项目没有引入任何第三方代码依赖（无 SwiftPM 包、无 CocoaPods）。上面两个项目本身的实现另有其各自的设计，与本项目不构成衍生关系。
+
+DeepSeek 那部分用的是官方公开文档化接口，不涉及此问题。
+
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
