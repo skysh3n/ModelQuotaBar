@@ -4,8 +4,7 @@ import WidgetKit
 /// 主窗口。上半部分是额度概览，下半部分是配置。
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var widgetSettings = SharedStore.loadWidgetSettings()
-    @State private var launchAtLoginError: String?
+    @State private var backgroundAgentError: String?
 
     private var store: QuotaStore { environment.store }
 
@@ -98,29 +97,33 @@ struct DashboardView: View {
                 Text("实时")
                     .foregroundStyle(.secondary)
             }
-            Text("每个来源按自己的节奏轮询（DeepSeek 约每 5 秒，千问每 5 分钟），回到前台或系统唤醒时立即刷新；关掉本窗口后仍在后台刷新，桌面小组件会跟着更新。")
+            Text("切到桌面、系统唤醒、解锁或回到本应用时立即刷新，数据有变化就更新桌面小组件；不空闲轮询。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            LabeledContent("开机自动启动") {
+            LabeledContent("后台常驻") {
                 Toggle("", isOn: Binding(
-                    get: { LaunchAtLogin.isEnabled },
+                    get: { BackgroundAgent.isInstalled },
                     set: { newValue in
                         do {
-                            try LaunchAtLogin.setEnabled(newValue)
-                            launchAtLoginError = nil
+                            try BackgroundAgent.setEnabled(newValue)
+                            backgroundAgentError = nil
                         } catch {
-                            launchAtLoginError = error.localizedDescription
+                            backgroundAgentError = error.localizedDescription
                         }
                     }))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
+            Text("开启后即使彻底退出本应用，后台也会常驻一个无窗口进程继续刷新，小组件不会停。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            if let launchAtLoginError {
-                Text(launchAtLoginError)
+            if let backgroundAgentError {
+                Text(backgroundAgentError)
                     .font(.caption2)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -135,21 +138,6 @@ struct DashboardView: View {
             Text("桌面小组件")
                 .font(.headline)
 
-            LabeledContent("小组件显示") {
-                Picker("", selection: Binding(
-                    get: { widgetSettings.displayMode },
-                    set: { newMode in
-                        widgetSettings.displayMode = newMode
-                        persistWidgetSettings()
-                    }))
-                {
-                    Text("剩余额度").tag(WidgetSettings.DisplayMode.remainingPercent)
-                    Text("已用额度").tag(WidgetSettings.DisplayMode.usedPercent)
-                }
-                .labelsHidden()
-                .frame(width: 150)
-            }
-
             if !SharedStore.isShared {
                 Label(
                     "写不进小组件的数据目录，桌面上的小组件会一直显示空状态。",
@@ -159,15 +147,10 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("把小组件放到桌面：在桌面空白处右键 →「编辑小组件」→ 搜索「大模型额度」→ 拖到桌面。")
+            Text("把小组件放到桌面：在桌面空白处右键 →「编辑小组件」→ 搜索「大模型额度」→ 拖到桌面。中尺寸会同时列出千问与 DeepSeek。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func persistWidgetSettings() {
-        SharedStore.saveWidgetSettings(widgetSettings)
-        WidgetCenter.shared.reloadAllTimelines()
     }
 }

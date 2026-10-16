@@ -3,9 +3,8 @@ import Observation
 
 /// 应用设置。凭据不在这里，见 `CredentialStore`。
 ///
-/// 刷新节奏不在这里配置：每个 Provider 自带 `refreshInterval`
-/// （DeepSeek 余额接口轻，5 秒一轮做到近似实时；千问走控制台网关，保守一些），
-/// 再叠加「回到前台 / 系统唤醒立即刷」的事件触发。全局间隔设置反而会让两边都对不上。
+/// 刷新节奏也不在这里配置：额度是**事件驱动**刷新的（切桌面 / 唤醒 / 解锁 /
+/// 回到前台），没有定时轮询。见 `QuotaStore`。
 @MainActor
 @Observable
 public final class AppSettings {

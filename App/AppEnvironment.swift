@@ -7,14 +7,19 @@ import WidgetKit
 @MainActor
 @Observable
 final class AppEnvironment {
+    /// 是否以 `--background` 无窗口模式运行（由 LaunchAgent 拉起）。
+    /// nonisolated：只读进程参数，不碰任何 actor 状态，供 AppDelegate 等非主 actor 上下文读取。
+    nonisolated static let isBackgroundMode =
+        ProcessInfo.processInfo.arguments.contains(BackgroundAgent.backgroundFlag)
+
     let settings: AppSettings
     let store: QuotaStore
 
-    /// 阻止 App Nap。窗口关掉后应用转入后台，macOS 默认会把后台应用的
-    /// 定时器合并 throttling，轮询会被拖慢——而用户明确要求关掉面板后
-    /// 小组件仍然实时刷新，所以这里显式声明「别睡」。
+    /// 阻止 App Nap。后台时 macOS 默认会合并延迟定时器，事件触发的去抖刷新
+    /// 可能被拖慢，这里显式声明「别睡」，保证切到桌面瞬间能拿到最新数据。
     private var antiNapActivity: (any NSObjectProtocol)?
     private var observers: [NSObjectProtocol] = []
+    private var debouncedRefreshTask: Task<Void, Never>?
 
     init() {
         let settings = AppSettings()
@@ -27,32 +32,50 @@ final class AppEnvironment {
 
         antiNapActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
-            reason: "保持额度轮询，使桌面小组件在窗口关闭后仍实时刷新")
+            reason: "保持事件触发的额度刷新及时执行，使桌面小组件实时更新")
 
         observeSystemEvents()
 
         Task { @MainActor [store] in
             await store.refreshAll()
-            store.startLiveRefresh()
         }
     }
 
-    /// 回到前台、系统唤醒时立刻刷一次，不等下一轮轮询。
+    /// 事件驱动的即时刷新。多个系统事件往往在几百毫秒内接连触发
+    /// （比如唤醒 → 回到前台 → 切换空间），去抖合并成一次请求。
     private func observeSystemEvents() {
-        let center = NotificationCenter.default
-        observers.append(center.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in await self?.refresh() }
-        })
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        let appCenter = NotificationCenter.default
 
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+        let refresh: @Sendable (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor [weak self] in self?.scheduleImmediateRefresh() }
+        }
+
+        // 切换空间 / 切到桌面（activeSpaceDidChange 正是这个语义）。
+        observers.append(workspaceCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil, queue: .main, using: refresh))
+        // 系统唤醒。
+        observers.append(workspaceCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in await self?.refresh() }
-        })
+            object: nil, queue: .main, using: refresh))
+        // 解锁回到会话。
+        observers.append(workspaceCenter.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil, queue: .main, using: refresh))
+        // 应用回到前台。
+        observers.append(appCenter.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil, queue: .main, using: refresh))
+    }
+
+    private func scheduleImmediateRefresh() {
+        debouncedRefreshTask?.cancel()
+        debouncedRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.refresh()
+        }
     }
 
     /// 刷新额度；拿到新数据后由 store 的回调通知系统重画小组件。
@@ -60,9 +83,9 @@ final class AppEnvironment {
         await store.refreshAll()
     }
 
-    /// 启用列表变化后重建轮询循环。
+    /// 启用列表变化后，对齐结果并立即刷一次。
     func providersDidChange() {
-        store.restartLiveRefresh()
+        store.syncWithSettings()
         Task { await refresh() }
     }
 }

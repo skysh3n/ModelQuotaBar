@@ -18,11 +18,9 @@ public struct ProviderResult: Sendable, Identifiable {
 
 /// 额度查询的调度中心。
 ///
-/// 刷新模型是「事件驱动 + 每个源各自节奏的轮询」，而不是全局定时器：
-/// - 应用回到前台、系统唤醒时立即刷一次；
-/// - 每个 Provider 按自己的 `refreshInterval` 轮询（DeepSeek 余额接口轻，5 秒一次，
-///   做到近似实时；千问走控制台网关，保守一些）；
-/// - 服务端没有推送能力，轮询是逼近「实时」的唯一手段。
+/// 刷新是**事件驱动**的，没有定时轮询：应用回到前台、切换空间/桌面、系统唤醒、
+/// 解锁回到会话时立即刷一次，另外提供手动刷新。服务端没有推送能力，
+/// 这种「有动静就刷」的模式既能保证切到桌面瞬间是最新的，又不会空闲时持续打接口。
 @MainActor
 @Observable
 public final class QuotaStore {
@@ -35,7 +33,6 @@ public final class QuotaStore {
     public var onWidgetDataChanged: (@MainActor () -> Void)?
 
     private let settings: AppSettings
-    private var pollTasks: [ProviderID: Task<Void, Never>] = [:]
     private var lastPublished: [WidgetSnapshot] = []
 
     public init(settings: AppSettings) {
@@ -62,8 +59,7 @@ public final class QuotaStore {
         results = next
     }
 
-    // MARK: - 拉取
-
+    /// 拉取所有已启用的来源。事件触发和手动刷新都走这里。
     public func refreshAll() async {
         syncWithSettings()
         guard !results.isEmpty else { return }
@@ -89,14 +85,6 @@ public final class QuotaStore {
         }
 
         apply(updates)
-    }
-
-    /// 只刷一个源。轮询循环用这个，避免每次都为所有源发请求。
-    public func refresh(_ providerID: ProviderID) async {
-        guard let provider = settings.activeProviders.first(where: { $0.id == providerID })
-        else { return }
-        let update = await fetchOne(provider)
-        apply([update])
     }
 
     private func fetchOne(
@@ -142,8 +130,7 @@ public final class QuotaStore {
 
     /// 把最新快照写进共享容器，供小组件渲染。
     ///
-    /// 只在数据真的变化时写盘并回调：DeepSeek 每 5 秒轮询一次，
-    /// 如果每次都通知 WidgetCenter 重画，会白白消耗系统的小组件刷新预算。
+    /// 只在数据真的变化时写盘并回调，避免无谓地消耗小组件刷新预算。
     private func publishToWidget() {
         let snapshots = results.compactMap { result -> WidgetSnapshot? in
             guard let snapshot = result.snapshot else { return nil }
@@ -151,40 +138,14 @@ public final class QuotaStore {
                 id: result.id,
                 vendor: result.metadata.vendor)
         }
+        // 有启用的源、但这次全都拉取失败：保留上一次写进容器里的数据，
+        // 别把小组件洗成「还没取到额度」。只有真正没有任何启用的源时才清空。
+        if snapshots.isEmpty && !settings.activeProviders.isEmpty {
+            return
+        }
         guard snapshots != lastPublished else { return }
         lastPublished = snapshots
         SharedStore.save(snapshots)
         onWidgetDataChanged?()
-    }
-
-    // MARK: - 轮询
-
-    /// 为每个已启用的源起一个轮询循环。启用列表变化后需要重开。
-    public func startLiveRefresh() {
-        stopLiveRefresh()
-        for provider in settings.activeProviders {
-            let id = provider.id
-            let interval = provider.refreshInterval
-            pollTasks[id] = Task { [weak self] in
-                // 先立刻刷一次，之后按各自节奏轮询。
-                while !Task.isCancelled {
-                    guard let self else { return }
-                    await self.refresh(id)
-                    try? await Task.sleep(for: .seconds(interval))
-                }
-            }
-        }
-    }
-
-    public func stopLiveRefresh() {
-        for task in pollTasks.values {
-            task.cancel()
-        }
-        pollTasks.removeAll()
-    }
-
-    public func restartLiveRefresh() {
-        syncWithSettings()
-        startLiveRefresh()
     }
 }

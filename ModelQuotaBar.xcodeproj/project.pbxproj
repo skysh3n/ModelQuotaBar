@@ -25,6 +25,8 @@
 		85579BCEA5511DA502574C2C /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76E1D080CA8EEEE7201A5759 /* AppEnvironment.swift */; };
 		8A9E5391C67945F9E5E72271 /* FormEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A38B66B45E6A2F7C16220140 /* FormEncoding.swift */; };
 		8F4C62F8451957253341F357 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB255D8105CBBC1EDF53295 /* SharedStore.swift */; };
+		A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
+		A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
 		A4267A73A74595193FBE2D02 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
 		AC7759AF8BE3806BBD61F1B1 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = E4D958D3FB8832252D609B9A /* AppIcon.icns */; };
 		AEAC44C649FB8FC17F623ABD /* QuotaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DAB9DEC9AE4F3506F165889 /* QuotaProvider.swift */; };
@@ -36,15 +38,13 @@
 		D752F7FB6FBA434B73588100 /* QuotaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3029F8304E38C1EC45109735 /* QuotaWidget.swift */; };
 		DA91F86B97D31DB64BD959C9 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50FF063F3C9826204FAABBD5 /* ProviderRegistry.swift */; };
 		DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE34C5D4B141CEA9435B755 /* DashboardView.swift */; };
-		E2E29B2CF2929A427DE7CC12 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABB1FD3729B4602FA8660502 /* LaunchAtLogin.swift */; };
+		E2E29B2CF2929A427DE7CC12 /* BackgroundAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */; };
 		EB86007EB858B22E11981432 /* QuotaWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 253B8FBE8D0FB3DA1DA94DE0 /* QuotaWidget.appex */; };
 		EE7BEEECA19199C97961EE43 /* ModelQuotaBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */; };
 		EF1D13C72BA678EA65102381 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
 		F0491DB4C98A8BA1BCFEE0F8 /* AliyunConsoleGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */; };
 		F3C274C563002C172523478D /* QuotaWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8FCA2449A2AD3BAC7A0150 /* QuotaWidgetBundle.swift */; };
 		FA9A83FAF27F828921912C2C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79204A0AF7D374F4C6CC7F2C /* AppSettings.swift */; };
-		A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
-		A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,15 +91,15 @@
 		9DAB9DEC9AE4F3506F165889 /* QuotaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaProvider.swift; sourceTree = "<group>"; };
 		A38B66B45E6A2F7C16220140 /* FormEncoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormEncoding.swift; sourceTree = "<group>"; };
 		A4EB5A1490582BEFAD01670A /* QwenTokenPlanRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenTokenPlanRegion.swift; sourceTree = "<group>"; };
-		ABB1FD3729B4602FA8660502 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
+		ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundAgent.swift; sourceTree = "<group>"; };
 		AC8AA3FAAD30B96AE886B364 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AliyunConsoleGatewayClient.swift; sourceTree = "<group>"; };
 		B64E6E3907156FBDC76E237D /* QuotaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaStore.swift; sourceTree = "<group>"; };
 		CE8FCA2449A2AD3BAC7A0150 /* QuotaWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaWidgetBundle.swift; sourceTree = "<group>"; };
+		D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekProvider.swift; sourceTree = "<group>"; };
 		E4D958D3FB8832252D609B9A /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		E5B4D59F3F5A9B7C3C25820C /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuotaBarApp.swift; sourceTree = "<group>"; };
-		D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,14 +150,6 @@
 			path = QwenTokenPlan;
 			sourceTree = "<group>";
 		};
-		DEE5E1DEE5E1DEE5E1DEE5E1 /* DeepSeek */ = {
-			isa = PBXGroup;
-			children = (
-				D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */,
-			);
-			path = DeepSeek;
-			sourceTree = "<group>";
-		};
 		2644D684CC7CAAA6916C4A28 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -182,7 +174,7 @@
 			children = (
 				FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */,
 				76E1D080CA8EEEE7201A5759 /* AppEnvironment.swift */,
-				ABB1FD3729B4602FA8660502 /* LaunchAtLogin.swift */,
+				ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */,
 				3DAAE2727F4978481D29A802 /* Support */,
 				2644D684CC7CAAA6916C4A28 /* Views */,
 				9BA999B3A811448FD33B3282 /* Resources */,
@@ -222,6 +214,14 @@
 				AC8AA3FAAD30B96AE886B364 /* Info.plist */,
 			);
 			path = Widget;
+			sourceTree = "<group>";
+		};
+		DEE5E1DEE5E1DEE5E1DEE5E1 /* DeepSeek */ = {
+			isa = PBXGroup;
+			children = (
+				D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */,
+			);
+			path = DeepSeek;
 			sourceTree = "<group>";
 		};
 		F23D06F03250067899697180 /* Support */ = {
@@ -345,7 +345,7 @@
 			files = (
 				EE7BEEECA19199C97961EE43 /* ModelQuotaBarApp.swift in Sources */,
 				85579BCEA5511DA502574C2C /* AppEnvironment.swift in Sources */,
-				E2E29B2CF2929A427DE7CC12 /* LaunchAtLogin.swift in Sources */,
+				E2E29B2CF2929A427DE7CC12 /* BackgroundAgent.swift in Sources */,
 				124FC7C2A048B784220DCB8F /* Format.swift in Sources */,
 				DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */,
 				5A6AB22C40B170B25ACC780F /* ProviderCardView.swift in Sources */,
@@ -438,7 +438,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = XY854963DK;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -446,6 +446,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
@@ -475,13 +476,14 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = XY854963DK;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
@@ -505,12 +507,13 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = XY854963DK;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -526,7 +529,6 @@
 				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
-				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skysh3n.ModelQuotaBar.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -575,12 +577,13 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = XY854963DK;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -594,7 +597,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
-				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skysh3n.ModelQuotaBar.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

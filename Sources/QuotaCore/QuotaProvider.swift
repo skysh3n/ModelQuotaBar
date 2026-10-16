@@ -146,12 +146,6 @@ public protocol QuotaProvider: Sendable {
     static func fetchSnapshot(credential: ProviderCredential) async throws -> QuotaSnapshot
 }
 
-public extension QuotaProvider {
-    /// 轮询节奏（秒）。默认 5 分钟；接口轻、限流宽的 Provider 可以调快做到近似实时。
-    /// 服务端没有推送能力，「实时」只能靠高频轮询 + 事件触发逼近。
-    static var refreshInterval: TimeInterval { 300 }
-}
-
 /// Provider 的值类型描述。
 ///
 /// 相比直接传 `any QuotaProvider.Type`（existential metatype），值类型更容易存放、
@@ -159,8 +153,6 @@ public extension QuotaProvider {
 public struct ProviderDescriptor: Sendable, Identifiable {
     public let metadata: ProviderMetadata
     public let credentialFields: [CredentialField]
-    /// 轮询节奏（秒）。
-    public let refreshInterval: TimeInterval
     private let fetch: @Sendable (ProviderCredential) async throws -> QuotaSnapshot
 
     public var id: ProviderID { metadata.id }
@@ -168,12 +160,10 @@ public struct ProviderDescriptor: Sendable, Identifiable {
     public init(
         metadata: ProviderMetadata,
         credentialFields: [CredentialField],
-        refreshInterval: TimeInterval = 300,
         fetch: @escaping @Sendable (ProviderCredential) async throws -> QuotaSnapshot
     ) {
         self.metadata = metadata
         self.credentialFields = credentialFields
-        self.refreshInterval = refreshInterval
         self.fetch = fetch
     }
 
@@ -187,8 +177,7 @@ public extension QuotaProvider {
     static var descriptor: ProviderDescriptor {
         ProviderDescriptor(
             metadata: metadata,
-            credentialFields: credentialFields,
-            refreshInterval: refreshInterval) { credential in
+            credentialFields: credentialFields) { credential in
             try await Self.fetchSnapshot(credential: credential)
         }
     }

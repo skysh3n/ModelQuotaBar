@@ -20,7 +20,6 @@ public enum SharedStore {
 
     private static let subdirectory = "ModelQuotaBar"
     private static let snapshotFileName = "quota-snapshot.json"
-    private static let settingsFileName = "widget-settings.json"
 
     public static var containerURL: URL? {
         let fileManager = FileManager.default
@@ -97,24 +96,6 @@ public enum SharedStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return (try? decoder.decode([WidgetSnapshot].self, from: data)) ?? []
-    }
-
-    // MARK: - 小组件展示设置
-
-    /// 小组件要显示哪个来源、用哪种展示方式。
-    public static func saveWidgetSettings(_ settings: WidgetSettings) {
-        guard let url = url(for: settingsFileName),
-              let data = try? JSONEncoder().encode(settings)
-        else { return }
-        try? data.write(to: url, options: .atomic)
-    }
-
-    public static func loadWidgetSettings() -> WidgetSettings {
-        guard let url = url(for: settingsFileName),
-              let data = try? Data(contentsOf: url),
-              let settings = try? JSONDecoder().decode(WidgetSettings.self, from: data)
-        else { return WidgetSettings() }
-        return settings
     }
 }
 
@@ -208,23 +189,6 @@ public struct WidgetWindow: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
-/// 小组件的展示偏好。
-public struct WidgetSettings: Codable, Sendable, Hashable {
-    public enum DisplayMode: String, Codable, Sendable, CaseIterable {
-        case remainingPercent
-        case usedPercent
-    }
-
-    /// 显示哪个来源的额度；nil 表示第一个。
-    public var providerID: String?
-    public var displayMode: DisplayMode
-
-    public init(providerID: String? = nil, displayMode: DisplayMode = .remainingPercent) {
-        self.providerID = providerID
-        self.displayMode = displayMode
-    }
-}
-
 public extension QuotaSnapshot {
     /// 转成小组件用的精简快照。
     func widgetSnapshot(
@@ -239,8 +203,10 @@ public extension QuotaSnapshot {
             primaryTitle: primary?.title,
             primaryRemainingRatio: primary?.remainingRatio,
             primaryResetsAt: primary?.resetsAt,
-            balanceRemaining: balance?.remaining,
-            balanceUnit: balance?.unit,
+            // 只有纯余额型来源（没有时间窗口）才映射余额；
+            // 千问的「用量包余额」是另一个概念，别塞进账户余额字段。
+            balanceRemaining: windows.isEmpty ? balance?.remaining : nil,
+            balanceUnit: windows.isEmpty ? balance?.unit : nil,
             secondaryWindows: windows
                 .filter { $0.id != primary?.id }
                 .map {

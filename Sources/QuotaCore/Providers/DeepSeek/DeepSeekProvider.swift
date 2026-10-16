@@ -25,11 +25,7 @@ public enum DeepSeekProvider: QuotaProvider {
         ),
     ]
 
-    /// 余额接口很轻、也没有套餐限流问题，可以高频轮询做到近似实时。
-    public static var refreshInterval: TimeInterval { 5 }
-
     private static let endpoint = URL(string: "https://api.deepseek.com/user/balance")!
-
     public static func fetchSnapshot(credential: ProviderCredential) async throws -> QuotaSnapshot {
         guard let apiKey = credential["apiKey"] else {
             throw QuotaError.missingCredential("API Key")
