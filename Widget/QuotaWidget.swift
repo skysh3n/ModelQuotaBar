@@ -39,36 +39,53 @@ extension QuotaEntry {
     }
 }
 
-struct QuotaTimelineProvider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> QuotaEntry {
-        .placeholder
+/// 小组件**自己**去抓最新数据——和天气小组件同一个模式，
+/// 因此不依赖主应用运行，也不依赖后台常驻。
+/// 抓不到（没凭据 / 断网）就退回共享容器里已有的快照，至少不显示空白。
+private func readQuotaEntry(sources: [WidgetSource]) async -> QuotaEntry {
+    let fresh = await QuotaFetcher.fetchAllWidgetSnapshots()
+    let snapshots: [WidgetSnapshot]
+    if fresh.isEmpty {
+        snapshots = SharedStore.loadSnapshots()
+    } else {
+        snapshots = fresh
+        // 回写一份，主应用下次打开时读到的是同一个数据。
+        SharedStore.save(fresh)
+    }
+    return QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)
+}
+
+/// 请求系统约 15 分钟后再刷（实际节奏由系统决定）。
+/// 必须是函数：写成常量会在进程启动时就把时间定死，之后一直是过期时间点。
+private func quotaRefreshPolicy() -> TimelineReloadPolicy {
+    .after(Date().addingTimeInterval(15 * 60))
+}
+
+/// 小尺寸的时间线 Provider：单选来源。
+struct QuotaSmallTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> QuotaEntry { .placeholder }
+
+    func snapshot(for configuration: SelectOneSourceIntent, in context: Context) async -> QuotaEntry {
+        context.isPreview ? .placeholder : await readQuotaEntry(sources: [configuration.source])
     }
 
-    func snapshot(for configuration: SelectSourceIntent, in context: Context) async -> QuotaEntry {
-        context.isPreview ? .placeholder : await Self.readEntry(sources: configuration.sources)
+    func timeline(for configuration: SelectOneSourceIntent, in context: Context) async -> Timeline<QuotaEntry> {
+        let entry = await readQuotaEntry(sources: [configuration.source])
+        return Timeline(entries: [entry], policy: quotaRefreshPolicy())
+    }
+}
+
+/// 中尺寸的时间线 Provider：多选来源。
+struct QuotaMediumTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> QuotaEntry { .placeholder }
+
+    func snapshot(for configuration: SelectSourcesIntent, in context: Context) async -> QuotaEntry {
+        context.isPreview ? .placeholder : await readQuotaEntry(sources: configuration.sources)
     }
 
-    func timeline(for configuration: SelectSourceIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        let entry = await Self.readEntry(sources: configuration.sources)
-        // 请求系统约 15 分钟后再来一次（实际节奏由系统决定）。
-        let next = Date().addingTimeInterval(15 * 60)
-        return Timeline(entries: [entry], policy: .after(next))
-    }
-
-    /// 小组件**自己**去抓最新数据——和天气小组件同一个模式，
-    /// 因此不依赖主应用运行，也不依赖后台常驻。
-    /// 抓不到（没凭据 / 断网）就退回共享容器里已有的快照，至少不显示空白。
-    private static func readEntry(sources: [WidgetSource]) async -> QuotaEntry {
-        let fresh = await QuotaFetcher.fetchAllWidgetSnapshots()
-        let snapshots: [WidgetSnapshot]
-        if fresh.isEmpty {
-            snapshots = SharedStore.loadSnapshots()
-        } else {
-            snapshots = fresh
-            // 回写一份，主应用下次打开时读到的是同一个数据。
-            SharedStore.save(fresh)
-        }
-        return QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)
+    func timeline(for configuration: SelectSourcesIntent, in context: Context) async -> Timeline<QuotaEntry> {
+        let entry = await readQuotaEntry(sources: configuration.sources)
+        return Timeline(entries: [entry], policy: quotaRefreshPolicy())
     }
 }
 
@@ -281,16 +298,39 @@ private enum WidgetPalette {
 
 // MARK: - 配置
 
-/// 可配置来源的小组件。右键 →「编辑」可切换显示哪个来源（默认全部）。
-/// 想「一个千问一个 DeepSeek」就加两个实例，各自在编辑里选来源。
-struct QuotaWidget: Widget {
-    static let kind = "QuotaWidget"
+/// 小尺寸：只显示一个来源，所以配置是**单选**。
+struct QuotaSmallWidget: Widget {
+    static let kind = "QuotaSmallWidget"
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: Self.kind, intent: SelectSourceIntent.self, provider: QuotaTimelineProvider()) { entry in
+        AppIntentConfiguration(
+            kind: Self.kind,
+            intent: SelectOneSourceIntent.self,
+            provider: QuotaSmallTimelineProvider()
+        ) { entry in
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度")
-        .description("显示大模型套餐的剩余额度与余额，右键可切换来源。")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .description("显示单个来源的剩余额度或账户余额。右键可切换来源。")
+        .supportedFamilies([.systemSmall])
+    }
+}
+
+/// 中尺寸：能并排显示多个来源，所以配置是**多选**。
+///
+/// 之所以拆成另一个小组件类型而不是给同一个类型的配置加判断：
+/// 配置项绑定在「小组件类型」上，intent 拿不到尺寸信息，没法做成随尺寸变化。
+struct QuotaMediumWidget: Widget {
+    static let kind = "QuotaMediumWidget"
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: Self.kind,
+            intent: SelectSourcesIntent.self,
+            provider: QuotaMediumTimelineProvider()
+        ) { entry in
+            QuotaWidgetEntryView(entry: entry)
+        }
+        .configurationDisplayName("大模型额度 · 多来源")
+        .description("并排显示多个来源，勾选几个就显示几个。")
+        .supportedFamilies([.systemMedium])
     }
 }
