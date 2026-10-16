@@ -28,6 +28,9 @@ CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED="${BUILD_DIR:-$HOME/Library/Caches/ModelQuotaBar/xcode}"
 DIST="$ROOT/dist"
 LOG="$DERIVED/xcodebuild.log"
+# 产出用中文名：Finder 优先显示 CFBundleDisplayName，但系统缓存顽固时
+# 文件名会先被看到，直接用中文名最省事。可执行文件名保持英文。
+APP_BUNDLE_NAME="大模型额度.app"
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
   echo "找不到 xcodebuild，请先安装 Xcode。" >&2
@@ -73,20 +76,20 @@ if [ ! -d "$BUILT" ]; then
 fi
 
 echo "==> 复制到 dist/"
-rm -rf "$DIST/ModelQuotaBar.app"
+rm -rf "$DIST/ModelQuotaBar.app" "$DIST/$APP_BUNDLE_NAME"
 # ditto 保留扩展属性与签名，普通 cp -R 可能破坏签名。
-ditto "$BUILT" "$DIST/ModelQuotaBar.app"
+ditto "$BUILT" "$DIST/$APP_BUNDLE_NAME"
 # dist/ 在仓库里，若仓库位于 iCloud 同步目录会被附加 FileProvider 属性，
 # 安装到 /Applications 后可能影响签名校验，这里清掉。
-xattr -cr "$DIST/ModelQuotaBar.app" 2>/dev/null || true
+xattr -cr "$DIST/$APP_BUNDLE_NAME" 2>/dev/null || true
 
 if [ -n "${NO_SIGN:-}" ]; then
   echo
-  echo "已构建（未签名）：$DIST/ModelQuotaBar.app"
+  echo "已构建（未签名）：$DIST/$APP_BUNDLE_NAME"
   echo "未签名的扩展不会被系统加载，小组件不会出现在组件库里。"
   exit 0
 fi
 
 echo
-echo "构建完成：$DIST/ModelQuotaBar.app"
-echo "安装：cp -R \"$DIST/ModelQuotaBar.app\" /Applications/"
+echo "构建完成：$DIST/$APP_BUNDLE_NAME"
+echo "安装：cp -R \"$DIST/$APP_BUNDLE_NAME\" /Applications/"

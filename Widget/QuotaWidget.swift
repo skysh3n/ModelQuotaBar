@@ -161,14 +161,17 @@ struct MediumWidgetView: View {
     }
 }
 
-/// 一个来源一行，结构统一为「标题行 + 底部件」：
-/// 窗口型底部件是进度条，余额型是一行小字，两行高度因此一致。
+/// 一个来源一行，两行结构完全对称：
+/// 标题行是「厂商 · 说明」（窗口型跟窗口名，余额型跟「账户余额」），
+/// 第二行是进度条（余额型没有比例，用等高的空白占位，保证两行对齐）。
 private struct SourceRow: View {
     let snapshot: WidgetSnapshot
 
     private var title: String {
-        guard let window = snapshot.primaryTitle else { return snapshot.vendor }
-        return "\(snapshot.vendor) · \(window)"
+        if let window = snapshot.primaryTitle {
+            return "\(snapshot.vendor) · \(window)"
+        }
+        return "\(snapshot.vendor) · 账户余额"
     }
 
     var body: some View {
@@ -192,18 +195,14 @@ private struct SourceRow: View {
                         .minimumScaleFactor(0.7)
                 }
             }
-            // 底部件统一高度：窗口型是进度条、余额型是一行小字，
-            // 不固定高度的话两种行会不等高，看起来歪。
             Group {
                 if let ratio = snapshot.primaryRemainingRatio {
                     WidgetProgressBar(remainingRatio: ratio, height: 4)
                 } else {
-                    Text("账户余额")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Color.clear
                 }
             }
-            .frame(height: 13, alignment: .leading)
+            .frame(height: 4, alignment: .leading)
         }
     }
 }

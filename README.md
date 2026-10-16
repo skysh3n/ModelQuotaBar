@@ -41,7 +41,7 @@ open ModelQuotaBar.xcodeproj
 
 ```bash
 TEAM_ID=你的TeamID ./scripts/build.sh
-cp -R dist/ModelQuotaBar.app /Applications/
+cp -R "dist/大模型额度.app" /Applications/
 ```
 
 > **iCloud 同步目录的坑。** 如果仓库放在「桌面」「文档」这类开了 iCloud 同步的目录里，FileProvider 会给构建产物附加扩展属性，`codesign` 会报 `resource fork, Finder information, or similar detritus not allowed`。脚本默认把构建目录放到仓库外（`~/Library/Caches/ModelQuotaBar/`）来避开；若仍遇到，把仓库移到不同步的目录即可。
