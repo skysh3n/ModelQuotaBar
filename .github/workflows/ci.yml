@@ -24,6 +24,9 @@ jobs:
 
       - name: 确认小组件扩展已被嵌入
         run: |
-          test -d dist/ModelQuotaBar.app/Contents/PlugIns/QuotaWidget.appex
-          test -f dist/ModelQuotaBar.app/Contents/PlugIns/QuotaWidget.appex/Contents/Info.plist
+          # 产物名是中文「大模型额度.app」，这里不写死，直接从 dist 里取。
+          APP=$(ls -d dist/*.app | head -1)
+          echo "产物：$APP"
+          test -d "$APP/Contents/PlugIns/QuotaWidget.appex"
+          test -f "$APP/Contents/PlugIns/QuotaWidget.appex/Contents/Info.plist"
           echo "小组件扩展已嵌入"
