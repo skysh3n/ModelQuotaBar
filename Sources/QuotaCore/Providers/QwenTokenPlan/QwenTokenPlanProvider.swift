@@ -12,11 +12,9 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         summary: "查询百炼 Token Plan 个人版的 5 小时 / 每周 / 每月额度用量与剩余 Credits。",
         consoleURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
         consoleHint:
-            "三种获取方式任选其一：\n" +
+            "两种获取方式任选其一：\n" +
             "①「登录获取」——在弹窗里登录一次，之后后台会自动续期，最省心；\n" +
-            "②「从浏览器导入」——直接在 Safari / Chrome 里登录，App 直接读它的登录态" +
-            "（Safari 需要授予「完全磁盘访问」权限，Chrome 会弹一次钥匙串授权）；\n" +
-            "③ 手动——控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求，" +
+            "② 手动——控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求，" +
             "复制 Request Headers 里 login_aliyunid_ticket 的值。",
         webLogin: WebLoginSpec(
             // 直接打开登录页，用户点「登录获取」就能看到登录表单。

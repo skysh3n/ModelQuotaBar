@@ -51,7 +51,6 @@
 		C0FFEE02C0FFEE02C0FFEE02 /* WebLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */; };
 		C0FFEE04C0FFEE04C0FFEE04 /* InitialFocusSuppressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */; };
 		C0FFEE06C0FFEE06C0FFEE06 /* WebSessionKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE05C0FFEE05C0FFEE05 /* WebSessionKeeper.swift */; };
-		C0FFEE08C0FFEE08C0FFEE08 /* BrowserCookieImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE07C0FFEE07C0FFEE07 /* BrowserCookieImporter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,7 +110,6 @@
 		C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebLoginSheet.swift; sourceTree = "<group>"; };
 		C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialFocusSuppressor.swift; sourceTree = "<group>"; };
 		C0FFEE05C0FFEE05C0FFEE05 /* WebSessionKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSessionKeeper.swift; sourceTree = "<group>"; };
-		C0FFEE07C0FFEE07C0FFEE07 /* BrowserCookieImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserCookieImporter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -188,7 +186,6 @@
 			children = (
 				FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */,
 				76E1D080CA8EEEE7201A5759 /* AppEnvironment.swift */,
-				C0FFEE07C0FFEE07C0FFEE07 /* BrowserCookieImporter.swift */,
 				C0FFEE05C0FFEE05C0FFEE05 /* WebSessionKeeper.swift */,
 				3DAAE2727F4978481D29A802 /* Support */,
 				2644D684CC7CAAA6916C4A28 /* Views */,
@@ -362,7 +359,6 @@
 			files = (
 				EE7BEEECA19199C97961EE43 /* ModelQuotaBarApp.swift in Sources */,
 				85579BCEA5511DA502574C2C /* AppEnvironment.swift in Sources */,
-				C0FFEE08C0FFEE08C0FFEE08 /* BrowserCookieImporter.swift in Sources */,
 				C0FFEE06C0FFEE06C0FFEE06 /* WebSessionKeeper.swift in Sources */,
 				124FC7C2A048B784220DCB8F /* Format.swift in Sources */,
 				DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */,
