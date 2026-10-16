@@ -1,17 +1,24 @@
 import SwiftUI
 import WidgetKit
 
-/// 一个小组件时间线条目，携带已经按来源过滤好的快照。
+/// 一个小组件时间线条目。同时保留全部快照与所选来源：
+/// 小尺寸按来源过滤，中尺寸固定显示全部，所以两个都要留着。
 struct QuotaEntry: TimelineEntry {
     let date: Date
-    let snapshots: [WidgetSnapshot]
+    let allSnapshots: [WidgetSnapshot]
+    let source: WidgetSource
+
+    /// 小尺寸用：按所选来源过滤。
+    var filteredSnapshots: [WidgetSnapshot] {
+        source.filtered(allSnapshots)
+    }
 }
 
 extension QuotaEntry {
     static var placeholder: QuotaEntry {
         QuotaEntry(
             date: Date(),
-            snapshots: [
+            allSnapshots: [
                 WidgetSnapshot(
                     id: "qwen", vendor: "通义千问", planName: "Pro 专业版",
                     primaryTitle: "每月", primaryRemainingRatio: 0.725,
@@ -24,7 +31,8 @@ extension QuotaEntry {
                     primaryResetsAt: nil,
                     balanceRemaining: 110.0, balanceUnit: "CNY",
                     secondaryWindows: [], remainingDays: nil, updatedAt: Date()),
-            ])
+            ],
+            source: .auto)
     }
 }
 
@@ -34,41 +42,30 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectSourceIntent, in context: Context) async -> QuotaEntry {
-        context.isPreview ? .placeholder : Self.readEntry(source: configuration.source)
+        context.isPreview ? .placeholder : await Self.readEntry(source: configuration.source)
     }
 
     func timeline(for configuration: SelectSourceIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        // 小组件自己不发网络请求：数据由主应用（或后台代理）抓取后写进共享容器。
-        // 正常刷新靠主进程在数据变化时 reloadAllTimelines；这里给个 15 分钟兜底。
-        let entry = Self.readEntry(source: configuration.source)
+        let entry = await Self.readEntry(source: configuration.source)
+        // 请求系统约 15 分钟后再来一次（实际节奏由系统决定）。
         let next = Date().addingTimeInterval(15 * 60)
         return Timeline(entries: [entry], policy: .after(next))
     }
 
-    private static func readEntry(source: WidgetSource) -> QuotaEntry {
-        QuotaEntry(date: Date(), snapshots: source.filtered(SharedStore.loadSnapshots()))
-    }
-}
-
-/// 固定来源的时间线 Provider，供「· 通义千问」「· DeepSeek」两个固定条目使用。
-struct FixedSourceProvider: TimelineProvider {
-    let source: WidgetSource
-
-    func placeholder(in context: Context) -> QuotaEntry {
-        .placeholder
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (QuotaEntry) -> Void) {
-        completion(context.isPreview ? .placeholder : Self.readEntry(source: source))
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        let entry = Self.readEntry(source: source)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60))))
-    }
-
-    private static func readEntry(source: WidgetSource) -> QuotaEntry {
-        QuotaEntry(date: Date(), snapshots: source.filtered(SharedStore.loadSnapshots()))
+    /// 小组件**自己**去抓最新数据——和天气小组件同一个模式，
+    /// 因此不依赖主应用运行，也不依赖后台常驻。
+    /// 抓不到（没凭据 / 断网）就退回共享容器里已有的快照，至少不显示空白。
+    private static func readEntry(source: WidgetSource) async -> QuotaEntry {
+        let fresh = await QuotaFetcher.fetchAllWidgetSnapshots()
+        let snapshots: [WidgetSnapshot]
+        if fresh.isEmpty {
+            snapshots = SharedStore.loadSnapshots()
+        } else {
+            snapshots = fresh
+            // 回写一份，主应用下次打开时读到的是同一个数据。
+            SharedStore.save(fresh)
+        }
+        return QuotaEntry(date: Date(), allSnapshots: snapshots, source: source)
     }
 }
 
@@ -78,12 +75,18 @@ struct QuotaWidgetEntryView: View {
 
     var body: some View {
         Group {
-            if entry.snapshots.isEmpty {
-                EmptyWidgetView()
-            } else if family == .systemMedium || family == .systemLarge {
-                MediumWidgetView(snapshots: entry.snapshots)
+            // 中/大尺寸空间够，固定并列显示全部来源，忽略来源选择
+            // （否则用户在中尺寸上选了单一来源会看到大片空白）。
+            if family == .systemMedium || family == .systemLarge {
+                if entry.allSnapshots.isEmpty {
+                    EmptyWidgetView()
+                } else {
+                    MediumWidgetView(snapshots: entry.allSnapshots)
+                }
+            } else if let first = entry.filteredSnapshots.first {
+                SmallWidgetView(snapshot: first)
             } else {
-                SmallWidgetView(snapshot: entry.snapshots[0])
+                EmptyWidgetView()
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
@@ -123,12 +126,26 @@ struct SmallWidgetView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
+                // 余额型没有进度条可压底，用更新时间填住底部，
+                // 否则内容会浮在中间、下半张卡显得空。
+                Text("\(Self.timeText(snapshot.updatedAt)) 更新")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
+        // 撑满并左上对齐。余额型内容窄，VStack 固有宽度小于卡片宽度时
+        // SwiftUI 会把它居中，看起来就比有进度条的千问卡片往右偏。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private static func timeText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }
 
-// MARK: - 中尺寸：并列列出所选来源
+// MARK: - 中尺寸：并列列出全部来源
 
 struct MediumWidgetView: View {
     let snapshots: [WidgetSnapshot]
@@ -139,6 +156,7 @@ struct MediumWidgetView: View {
                 SourceRow(snapshot: snapshot)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -232,6 +250,7 @@ private enum WidgetPalette {
 // MARK: - 配置
 
 /// 可配置来源的小组件。右键 →「编辑」可切换显示哪个来源（默认全部）。
+/// 想「一个千问一个 DeepSeek」就加两个实例，各自在编辑里选来源。
 struct QuotaWidget: Widget {
     static let kind = "QuotaWidget"
     var body: some WidgetConfiguration {
@@ -240,32 +259,6 @@ struct QuotaWidget: Widget {
         }
         .configurationDisplayName("大模型额度")
         .description("显示大模型套餐的剩余额度与余额，右键可切换来源。")
-        .supportedFamilies([.systemSmall, .systemMedium])
-    }
-}
-
-/// 固定来源的小组件：不依赖编辑界面，直接各占一个组件库条目，
-/// 用户想「一个千问一个 DeepSeek」时各加一个即可。
-struct QuotaQwenWidget: Widget {
-    static let kind = "QuotaQwenWidget"
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: FixedSourceProvider(source: .qwen)) { entry in
-            QuotaWidgetEntryView(entry: entry)
-        }
-        .configurationDisplayName("大模型额度 · 通义千问")
-        .description("固定显示通义千问 Token Plan 的剩余额度。")
-        .supportedFamilies([.systemSmall, .systemMedium])
-    }
-}
-
-struct QuotaDeepSeekWidget: Widget {
-    static let kind = "QuotaDeepSeekWidget"
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: FixedSourceProvider(source: .deepseek)) { entry in
-            QuotaWidgetEntryView(entry: entry)
-        }
-        .configurationDisplayName("大模型额度 · DeepSeek")
-        .description("固定显示 DeepSeek 账户余额。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

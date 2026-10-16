@@ -41,6 +41,9 @@ enum BackgroundAgent {
             "ProgramArguments": [executable, backgroundFlag],
             "RunAtLoad": true,
             "KeepAlive": true,
+            // 告诉系统这个后台项属于哪个 app，否则「登录项与扩展」里会
+            // 显示成进程属主名（用户名），而不是应用名。
+            "AssociatedBundleIdentifiers": [Bundle.main.bundleIdentifier ?? ""],
         ]
         let data = try PropertyListSerialization.data(
             fromPropertyList: plist, format: .xml, options: 0)

@@ -7,34 +7,44 @@ import Foundation
 /// 每次重新编译签名都会变，macOS 就把程序当成另一个应用，每次启动都弹一次系统密码框。
 /// 那个交互没法接受，所以改用文件。
 ///
-/// 文件放在应用**自己的沙盒容器**里（`~/Library/Containers/<bundle id>/Data/...`）。
-/// 沙盒保证其它应用读不到它，再把权限位收成 0600 只留属主可读写。
-/// 安全性低于钥匙串——同一个用户账号下的进程仍可读——但对一个只用来看自己套餐余量的
-/// 工具来说，这个折中是划算的，换来的是完全无感的配置体验。
+/// **为什么放在共享容器而不是 Application Support。** 小组件要能**自己**抓数据
+/// （像天气小组件那样，不依赖主应用运行），就必须读得到凭据。共享容器正是主应用与
+/// 小组件都能访问的位置，于是凭据放这里，两边共用同一份。
 public enum CredentialStore {
-    /// 放在自己的子目录里：`credentials.json` 这个名字太通用，
-    /// 直接丢在 Application Support 根目录会跟别的应用撞名。
-    private static let directoryName = "ModelQuotaBar"
     private static let fileName = "credentials.json"
 
     private static var fileURL: URL? {
+        SharedStore.containerURL?.appendingPathComponent(fileName)
+    }
+
+    /// 旧版本把凭据存在 Application Support 里，迁移过来，免得用户重填。
+    private static var legacyFileURL: URL? {
         guard let base = try? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
-            create: true)
+            create: false)
         else { return nil }
-        let directory = base.appendingPathComponent(directoryName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent(fileName)
+        return base
+            .appendingPathComponent("ModelQuotaBar", isDirectory: true)
+            .appendingPathComponent(fileName)
     }
 
     /// 所有 Provider 的凭据，按 ProviderID 索引。
     private static func loadAll() -> [String: [String: String]] {
-        guard let url = fileURL,
-              let data = try? Data(contentsOf: url),
+        if let url = fileURL,
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
+        {
+            return decoded
+        }
+        // 共享容器里还没有，看看旧位置有没有，有就搬过来。
+        guard let legacy = legacyFileURL,
+              let data = try? Data(contentsOf: legacy),
               let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
+        try? persist(decoded)
+        try? FileManager.default.removeItem(at: legacy)
         return decoded
     }
 

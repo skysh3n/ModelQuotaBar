@@ -4,5 +4,9 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- 小组件自己去请求额度接口（像天气小组件那样），需要出网权限。
+	     这不是受限权限，不需要 provisioning profile。 -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

@@ -97,12 +97,12 @@ struct DashboardView: View {
                 Text("实时")
                     .foregroundStyle(.secondary)
             }
-            Text("切到桌面、系统唤醒、解锁或回到本应用时立即刷新，数据有变化就更新桌面小组件；不空闲轮询。")
+            Text("桌面小组件会自己定时刷新（由系统调度，约 15 分钟一次），不需要本应用运行，也不用开机自启。本应用运行时会在切到桌面、系统唤醒、解锁、回到前台时额外立即刷一次。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            LabeledContent("后台常驻") {
+            LabeledContent("后台常驻（可选）") {
                 Toggle("", isOn: Binding(
                     get: { BackgroundAgent.isInstalled },
                     set: { newValue in
@@ -117,7 +117,7 @@ struct DashboardView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
-            Text("开启后即使彻底退出本应用，后台也会常驻一个无窗口进程继续刷新，小组件不会停。")
+            Text("可选项。不开也能正常用；开启后即使退出本应用，后台仍留一个无窗口进程，让刷新更跟手（切到桌面立刻更新）。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -147,7 +147,7 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。组件库里有三个条目：「大模型额度」可在右键菜单里切换来源，「·通义千问」「·DeepSeek」则固定显示一家——想一个千问一个 DeepSeek，各加一个即可。")
+            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。加进来后右键点它 →「编辑“大模型额度”」，可切换显示全部 / 通义千问 / DeepSeek；想一个千问一个 DeepSeek，就加两个实例分别设置。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

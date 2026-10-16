@@ -47,6 +47,8 @@
 		F0491DB4C98A8BA1BCFEE0F8 /* AliyunConsoleGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */; };
 		F3C274C563002C172523478D /* QuotaWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8FCA2449A2AD3BAC7A0150 /* QuotaWidgetBundle.swift */; };
 		FA9A83FAF27F828921912C2C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79204A0AF7D374F4C6CC7F2C /* AppSettings.swift */; };
+		B2C3D4E5F607182930405061 /* QuotaFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182930405060 /* QuotaFetcher.swift */; };
+		B2C3D4E5F607182930405062 /* QuotaFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182930405060 /* QuotaFetcher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +105,7 @@
 		E4D958D3FB8832252D609B9A /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		E5B4D59F3F5A9B7C3C25820C /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuotaBarApp.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182930405060 /* QuotaFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaFetcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,6 +199,7 @@
 				B64E6E3907156FBDC76E237D /* QuotaStore.swift */,
 				7FB255D8105CBBC1EDF53295 /* SharedStore.swift */,
 				A1B2C3D4E5F60718293A4B5C /* WidgetSource.swift */,
+				B2C3D4E5F607182930405060 /* QuotaFetcher.swift */,
 				F23D06F03250067899697180 /* Support */,
 				0C22E638F63A90B86F0296C2 /* Providers */,
 			);
@@ -362,6 +366,7 @@
 				2DDED2A1FFBB7DEBCB64D065 /* QuotaStore.swift in Sources */,
 				8F4C62F8451957253341F357 /* SharedStore.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5D /* WidgetSource.swift in Sources */,
+				B2C3D4E5F607182930405061 /* QuotaFetcher.swift in Sources */,
 				8A9E5391C67945F9E5E72271 /* FormEncoding.swift in Sources */,
 				4C01C54F560977C4A73B61DE /* JSONSearch.swift in Sources */,
 				1B0DDC80008C123F53452BFE /* CredentialStore.swift in Sources */,
@@ -385,6 +390,7 @@
 				C2C1877538CFBE8B29BA2775 /* QuotaStore.swift in Sources */,
 				AEE1BF40F895089E3976CB0C /* SharedStore.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5E /* WidgetSource.swift in Sources */,
+				B2C3D4E5F607182930405062 /* QuotaFetcher.swift in Sources */,
 				772F977B45CCABAC88251E34 /* FormEncoding.swift in Sources */,
 				6F375131483F0B9C5FAC474B /* JSONSearch.swift in Sources */,
 				C91FF52BC8681D824E858304 /* CredentialStore.swift in Sources */,
