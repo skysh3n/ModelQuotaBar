@@ -76,6 +76,8 @@ private struct ConsoleWebView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
         private var pollTask: Task<Void, Never>?
+        private var spec: WebLoginSpec?
+        private var didLeaveLoginPage = false
 
         func startWatching(
             webView: WKWebView,
@@ -83,6 +85,7 @@ private struct ConsoleWebView: NSViewRepresentable {
             status: Binding<String>,
             onCaptured: @escaping (String) -> Void
         ) {
+            self.spec = spec
             pollTask?.cancel()
             // 登录是在网页里异步完成的，没有回调可挂，轮询 Cookie 最简单可靠。
             pollTask = Task { @MainActor in
@@ -101,7 +104,13 @@ private struct ConsoleWebView: NSViewRepresentable {
             }
         }
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
+        /// 离开登录页说明登录完成，落回业务页——凭据是在那一步才下发的。
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let spec, let postLogin = spec.postLoginURL, !didLeaveLoginPage else { return }
+            guard let host = webView.url?.host, host != spec.url.host else { return }
+            didLeaveLoginPage = true
+            webView.load(URLRequest(url: postLogin))
+        }
 
         deinit { pollTask?.cancel() }
     }

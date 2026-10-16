@@ -12,9 +12,6 @@ final class AppEnvironment {
     /// 后台会话保活：定期用网页登录态访问一次控制台，让会话续期。
     let sessionKeeper = WebSessionKeeper()
 
-    /// 需要用户登录的来源。非 nil 时界面会自动弹出登录窗口。
-    var pendingLogin: (provider: ProviderID, spec: WebLoginSpec)?
-
     private var observers: [NSObjectProtocol] = []
     private var debouncedRefreshTask: Task<Void, Never>?
 
@@ -38,7 +35,6 @@ final class AppEnvironment {
             guard let self else { return }
             await self.refresh()
             self.startSessionKeeperIfNeeded()
-            self.presentLoginIfNeeded()
         }
     }
 
@@ -46,19 +42,17 @@ final class AppEnvironment {
 
     func refresh() async {
         await store.refreshAll()
-        await recoverExpiredSessions()
+        await renewExpiredSessions()
     }
 
-    /// 会话过期时先用保活会话自动续期并重试；续不上再请用户登录。
-    private func recoverExpiredSessions() async {
-        guard let expired = expiredLoginSpec() else { return }
-        if sessionKeeper.isRunning {
-            await sessionKeeper.refreshNow()
-            await store.refreshAll()
-            // 续期成功就不再打扰用户。
-            if expiredLoginSpec() == nil { return }
-        }
-        pendingLogin = expired
+    /// 会话过期时用保活会话自动续期并重试一次。
+    ///
+    /// 不在这里弹登录窗口——续不上就照常把「会话已失效」显示在卡片上，
+    /// 由用户自己决定什么时候点「登录获取」。
+    private func renewExpiredSessions() async {
+        guard expiredLoginSpec() != nil, sessionKeeper.isRunning else { return }
+        await sessionKeeper.refreshNow()
+        await store.refreshAll()
     }
 
     /// 找出第一个「可以用网页登录解决」的过期来源。
@@ -84,16 +78,9 @@ final class AppEnvironment {
         }
     }
 
-    /// 凭据失效能用网页登录解决时，直接把登录窗口推给用户。
-    private func presentLoginIfNeeded() {
-        guard pendingLogin == nil else { return }
-        pendingLogin = expiredLoginSpec()
-    }
-
     /// 登录窗口拿到凭据后调用。
     func didCaptureLogin(provider: ProviderID) {
         settings.markWebLoginUsed(provider)
-        pendingLogin = nil
         startSessionKeeperIfNeeded()
         Task { await refresh() }
     }

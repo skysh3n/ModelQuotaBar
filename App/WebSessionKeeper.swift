@@ -75,7 +75,8 @@ final class WebSessionKeeper {
     @discardableResult
     func refreshNow() async -> String? {
         guard let webView, let target else { return nil }
-        webView.load(URLRequest(url: target.spec.url))
+        // 保活要访问的是业务页（凭据在它那儿续期/下发），不是登录页。
+        webView.load(URLRequest(url: target.spec.postLoginURL ?? target.spec.url))
 
         let deadline = Date().addingTimeInterval(Self.captureTimeout)
         while Date() < deadline, !Task.isCancelled {

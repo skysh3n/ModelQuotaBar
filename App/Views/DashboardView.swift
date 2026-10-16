@@ -22,23 +22,6 @@ struct DashboardView: View {
         // macOS 会把窗口里第一个可输入控件设为初始 first responder，于是「控制台会话
         // Cookie」一打开就是选中态。SwiftUI 的 defaultFocus 拦不住，落到 AppKit 处理。
         .suppressingInitialTextFieldFocus()
-        // 凭据失效且能用网页登录解决时，自动把登录窗口推出来。
-        .sheet(isPresented: Binding(
-            get: { environment.pendingLogin != nil },
-            set: { if !$0 { environment.pendingLogin = nil } }
-        )) {
-            if let pending = environment.pendingLogin {
-                WebLoginSheet(
-                    spec: pending.spec,
-                    onCaptured: { value in
-                        var credential = CredentialStore.loadCredential(for: pending.provider)
-                        credential[pending.spec.targetFieldID] = value
-                        try? CredentialStore.save(credential, for: pending.provider)
-                        environment.didCaptureLogin(provider: pending.provider)
-                    },
-                    onCancel: { environment.pendingLogin = nil })
-            }
-        }
     }
 
     // MARK: - 额度概览

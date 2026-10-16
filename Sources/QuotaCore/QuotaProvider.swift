@@ -103,8 +103,13 @@ public struct ProviderCredential: Sendable, Hashable {
 /// 手动去开发者工具里复制，不如让 App 内嵌一个网页窗口让他登录一次、直接拿到
 /// Cookie——用的是公开 API，不需要「完全磁盘访问」这类系统权限去读浏览器文件。
 public struct WebLoginSpec: Sendable {
-    /// 打开哪个页面引导用户登录。
+    /// 打开哪个页面引导用户登录（通常是登录页本身）。
     public let url: URL
+    /// 登录成功后跳转的目的地。
+    ///
+    /// 有些厂商只在**业务域名**下才下发业务凭据（阿里云的 `login_aliyunid_ticket`
+    /// 就是登录后跳回控制台时才下来），所以登录页之后要再走一步业务页。
+    public let postLoginURL: URL?
     /// 登录成功后要抓取的 Cookie 名。
     public let cookieName: String
     /// 抓到后写进哪个凭据字段。
@@ -112,8 +117,15 @@ public struct WebLoginSpec: Sendable {
     /// 提示语，告诉用户登录后会发生什么。
     public let hint: String
 
-    public init(url: URL, cookieName: String, targetFieldID: String, hint: String) {
+    public init(
+        url: URL,
+        postLoginURL: URL? = nil,
+        cookieName: String,
+        targetFieldID: String,
+        hint: String
+    ) {
         self.url = url
+        self.postLoginURL = postLoginURL
         self.cookieName = cookieName
         self.targetFieldID = targetFieldID
         self.hint = hint

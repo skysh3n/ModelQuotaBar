@@ -16,10 +16,13 @@ public enum QwenTokenPlanProvider: QuotaProvider {
             "想手动的话，在控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求里，" +
             "复制 Request Headers 里 login_aliyunid_ticket 的值。",
         webLogin: WebLoginSpec(
-            url: QwenTokenPlanRegion.chinaMainland.consoleURL,
+            // 直接打开登录页，用户点「登录获取」就能看到登录表单。
+            url: URL(string: "https://account.aliyun.com/login/login.htm")!,
+            // 登录成功后要落回控制台，login_aliyunid_ticket 是这一步才下发的。
+            postLoginURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
             cookieName: "login_aliyunid_ticket",
             targetFieldID: "cookie",
-            hint: "在弹出的窗口里登录百炼控制台。登录成功、页面能打开后，App 会自动取到会话凭据。")
+            hint: "在弹出的窗口里登录百炼控制台。登录成功后 App 会自动取到会话凭据。")
     )
 
     public static let credentialFields: [CredentialField] = [
