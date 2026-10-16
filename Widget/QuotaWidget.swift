@@ -145,24 +145,24 @@ struct SmallWidgetView: View {
     }
 }
 
-// MARK: - 中尺寸：并列列出全部来源
+// MARK: - 中尺寸：左右两栏并列
 
 struct MediumWidgetView: View {
     let snapshots: [WidgetSnapshot]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        HStack(alignment: .top, spacing: 18) {
             ForEach(snapshots) { snapshot in
-                SourceRow(snapshot: snapshot)
+                SourceColumn(snapshot: snapshot)
             }
         }
-        // 垂直居中：只有一两个来源时，贴顶会让下半张卡空一大块。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
-/// 一个来源一行。左侧两行小字（厂商 / 说明），右侧数值**垂直居中**于这两行。
-private struct SourceRow: View {
+/// 一个来源一栏。中尺寸卡片本来就是横向的，左右分栏比上下堆叠更饱满，
+/// 也能让两家的数字并排好对比。
+private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
 
     private var subtitle: String {
@@ -171,19 +171,17 @@ private struct SourceRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(snapshot.vendor)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer(minLength: 8)
-                valueText
-            }
-            // 第二行统一高度：窗口型是进度条，余额型留等宽空白，两行等高。
+            Text(snapshot.vendor)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            valueText
+
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
             Group {
                 if let ratio = snapshot.primaryRemainingRatio {
                     WidgetProgressBar(remainingRatio: ratio, height: 4)
@@ -193,21 +191,25 @@ private struct SourceRow: View {
             }
             .frame(height: 4, alignment: .leading)
         }
+        // 内容整体在栏内垂直居中，避免顶部贴边、底部空一大块。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var valueText: some View {
         if let ratio = snapshot.primaryRemainingRatio {
             Text(String(format: "%.1f%%", ratio * 100))
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
                 .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
         } else if let balance = snapshot.balanceRemaining {
             Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
         }
     }
 }
