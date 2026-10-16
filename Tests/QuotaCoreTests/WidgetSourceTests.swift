@@ -3,10 +3,11 @@ import Foundation
 
 enum WidgetSourceTests {
     static let suite = TestSuite("小组件来源过滤", [
-        ("自动匹配全部", testAutoMatchesAll),
         ("千问只匹配千问", testQwenMatchesOnlyQwen),
         ("DeepSeek 只匹配 DeepSeek", testDeepSeekMatchesOnlyDeepSeek),
-        ("按来源过滤快照列表", testFilteredReturnsCorrectSubset),
+        ("多选来源取并集且保持原顺序", testMultiSelectKeepsOrder),
+        ("只勾一个时只留一个", testSingleSelection),
+        ("一个都没勾时退回全部", testEmptySelectionFallsBackToAll),
     ])
 
     private static let qwen = WidgetSnapshot(
@@ -21,9 +22,14 @@ enum WidgetSourceTests {
         balanceRemaining: 45.54, balanceUnit: "CNY",
         secondaryWindows: [], remainingDays: nil, updatedAt: Date())
 
-    static func testAutoMatchesAll() throws {
-        try Expect.isTrue(WidgetSource.auto.matches(qwen))
-        try Expect.isTrue(WidgetSource.auto.matches(deepseek))
+    private static let all = [qwen, deepseek]
+
+    /// 和小组件里 `QuotaEntry.selectedSnapshots` 同一套过滤规则。
+    private static func select(_ sources: [WidgetSource]) -> [WidgetSnapshot] {
+        guard !sources.isEmpty else { return all }
+        return all.filter { snapshot in
+            sources.contains { $0.matches(snapshot) }
+        }
     }
 
     static func testQwenMatchesOnlyQwen() throws {
@@ -36,10 +42,19 @@ enum WidgetSourceTests {
         try Expect.isTrue(!WidgetSource.deepseek.matches(qwen))
     }
 
-    static func testFilteredReturnsCorrectSubset() throws {
-        let all = [qwen, deepseek]
-        try Expect.equal(WidgetSource.auto.filtered(all).map(\.id), ["qwen-token-plan", "deepseek"])
-        try Expect.equal(WidgetSource.qwen.filtered(all).map(\.id), ["qwen-token-plan"])
-        try Expect.equal(WidgetSource.deepseek.filtered(all).map(\.id), ["deepseek"])
+    static func testMultiSelectKeepsOrder() throws {
+        // 勾选顺序与展示顺序无关，始终按快照本来的顺序排。
+        try Expect.equal(
+            select([.deepseek, .qwen]).map(\.id),
+            ["qwen-token-plan", "deepseek"])
+    }
+
+    static func testSingleSelection() throws {
+        try Expect.equal(select([.qwen]).map(\.id), ["qwen-token-plan"])
+        try Expect.equal(select([.deepseek]).map(\.id), ["deepseek"])
+    }
+
+    static func testEmptySelectionFallsBackToAll() throws {
+        try Expect.equal(select([]).map(\.id), ["qwen-token-plan", "deepseek"])
     }
 }

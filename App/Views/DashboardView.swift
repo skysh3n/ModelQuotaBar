@@ -99,7 +99,7 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。加进来后右键点它 →「编辑“大模型额度”」，可切换显示全部 / 通义千问 / DeepSeek；想一个千问一个 DeepSeek，就加两个实例分别设置。")
+            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。加进来后右键点它 →「编辑“大模型额度”」，勾选要显示的来源（可多选）。小尺寸显示勾选里的第一个，中尺寸并列显示全部勾选的。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
