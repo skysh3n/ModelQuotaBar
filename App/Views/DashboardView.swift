@@ -4,6 +4,9 @@ import WidgetKit
 /// 主窗口。上半部分是额度概览，下半部分是配置。
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var environment
+    /// 只在 defaultFocus 里用：窗口的默认焦点交给「没有控件」，
+    /// 这样打开窗口时不会自动把光标丢进第一个输入框。
+    @FocusState private var focusedField: String?
 
     private var store: QuotaStore { environment.store }
 
@@ -19,6 +22,10 @@ struct DashboardView: View {
             .padding(20)
         }
         .frame(width: 520, height: 620)
+        // macOS 会把窗口里第一个可输入控件设为初始 first responder，
+        // 于是「控制台会话 Cookie」一打开就是选中态。这里声明窗口的默认焦点为「无」，
+        // 从源头避免，而不是等它拿到焦点后再抢回来（那样会漏、也会闪一下）。
+        .defaultFocus($focusedField, nil)
     }
 
     // MARK: - 额度概览
