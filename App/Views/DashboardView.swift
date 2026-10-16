@@ -93,15 +93,6 @@ struct DashboardView: View {
             Text("通用")
                 .font(.headline)
 
-            LabeledContent("刷新") {
-                Text("实时")
-                    .foregroundStyle(.secondary)
-            }
-            Text("桌面小组件会自己定时刷新（由系统调度，约 15 分钟一次），不需要本应用运行，也不用开机自启。本应用运行时会在切到桌面、系统唤醒、解锁、回到前台时额外立即刷一次。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
             LabeledContent("后台常驻（可选）") {
                 Toggle("", isOn: Binding(
                     get: { BackgroundAgent.isInstalled },

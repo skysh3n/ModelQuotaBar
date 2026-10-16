@@ -151,25 +151,34 @@ struct MediumWidgetView: View {
     let snapshots: [WidgetSnapshot]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             ForEach(snapshots) { snapshot in
                 SourceRow(snapshot: snapshot)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 垂直居中：只有一两个来源时，贴顶会让下半张卡空一大块。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
+/// 一个来源一行，结构统一为「标题行 + 底部件」：
+/// 窗口型底部件是进度条，余额型是一行小字，两行高度因此一致。
 private struct SourceRow: View {
     let snapshot: WidgetSnapshot
 
+    private var title: String {
+        guard let window = snapshot.primaryTitle else { return snapshot.vendor }
+        return "\(snapshot.vendor) · \(window)"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(snapshot.vendor)
+                Text(title)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .lineLimit(1)
+                Spacer(minLength: 8)
                 if let ratio = snapshot.primaryRemainingRatio {
                     Text(String(format: "%.1f%%", ratio * 100))
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -183,19 +192,18 @@ private struct SourceRow: View {
                         .minimumScaleFactor(0.7)
                 }
             }
-            HStack(spacing: 6) {
+            // 底部件统一高度：窗口型是进度条、余额型是一行小字，
+            // 不固定高度的话两种行会不等高，看起来歪。
+            Group {
                 if let ratio = snapshot.primaryRemainingRatio {
-                    Text("\(snapshot.primaryTitle ?? "套餐")剩余")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    WidgetProgressBar(remainingRatio: ratio, height: 3)
+                    WidgetProgressBar(remainingRatio: ratio, height: 4)
                 } else {
                     Text("账户余额")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Spacer()
                 }
             }
+            .frame(height: 13, alignment: .leading)
         }
     }
 }
