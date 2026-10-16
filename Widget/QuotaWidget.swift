@@ -160,7 +160,9 @@ struct MediumWidgetView: View {
             if snapshots.count == 1, let only = snapshots.first {
                 SourceColumn(snapshot: only, valueSize: 46)
             } else {
-                HStack(alignment: .top, spacing: 18) {
+                // 栏间距给得比一般间距宽：左栏的进度条会一直顶到分栏线，
+                // 太窄的话右栏看着像贴着它。
+                HStack(alignment: .top, spacing: 32) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
                     }
