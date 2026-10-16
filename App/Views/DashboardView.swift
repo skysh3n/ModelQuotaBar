@@ -4,15 +4,15 @@ import WidgetKit
 /// 主窗口。上半部分是额度概览，下半部分是配置。
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var environment
-    /// 窗口默认焦点的归属。见下方 defaultFocus 的注释。
     @FocusState private var focusedField: String?
-    private static let defaultFocusTarget = "refresh"
+    private static let focusSinkID = "focus-sink"
 
     private var store: QuotaStore { environment.store }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                focusSink
                 quotaSection
                 Divider()
                 sourcesSection
@@ -23,9 +23,19 @@ struct DashboardView: View {
         }
         .frame(width: 520, height: 620)
         // macOS 会把窗口里第一个可输入控件设为初始 first responder，于是「控制台会话
-        // Cookie」一打开就是选中态。声明成 nil（不给任何控件）实测不起作用，所以改成
-        // 明确指定一个目标：焦点给「刷新」按钮，系统就不会把它丢到输入框上。
-        .defaultFocus($focusedField, Self.defaultFocusTarget)
+        // Cookie」一打开就是选中态。试过 defaultFocus 给 nil、给「刷新」按钮，都拦不住
+        // （按钮默认不参与 macOS 的焦点环）。这里放一个零尺寸、不画焦点环的可聚焦元素
+        // 专门接住默认焦点——焦点有了归属就不会落到输入框上，也不依赖系统设置。
+        .defaultFocus($focusedField, Self.focusSinkID)
+    }
+
+    /// 只用来接住窗口默认焦点的隐形元素，不显示、不占位。
+    private var focusSink: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedField, equals: Self.focusSinkID)
     }
 
     // MARK: - 额度概览
@@ -46,9 +56,6 @@ struct DashboardView: View {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .disabled(store.isRefreshing)
-                // 窗口的默认焦点落在这里（见下方 defaultFocus）。
-                // 只要焦点有明确归属，系统就不会把它丢给第一个输入框。
-                .focused($focusedField, equals: Self.defaultFocusTarget)
             }
 
             if store.results.isEmpty {
