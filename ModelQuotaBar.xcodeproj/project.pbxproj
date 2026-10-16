@@ -48,6 +48,8 @@
 		FA9A83FAF27F828921912C2C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79204A0AF7D374F4C6CC7F2C /* AppSettings.swift */; };
 		B2C3D4E5F607182930405061 /* QuotaFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182930405060 /* QuotaFetcher.swift */; };
 		B2C3D4E5F607182930405062 /* QuotaFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182930405060 /* QuotaFetcher.swift */; };
+		C0FFEE02C0FFEE02C0FFEE02 /* WebLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */; };
+		C0FFEE04C0FFEE04C0FFEE04 /* InitialFocusSuppressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -104,6 +106,8 @@
 		E5B4D59F3F5A9B7C3C25820C /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuotaBarApp.swift; sourceTree = "<group>"; };
 		B2C3D4E5F607182930405060 /* QuotaFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaFetcher.swift; sourceTree = "<group>"; };
+		C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebLoginSheet.swift; sourceTree = "<group>"; };
+		C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialFocusSuppressor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -158,6 +162,8 @@
 			isa = PBXGroup;
 			children = (
 				8FE34C5D4B141CEA9435B755 /* DashboardView.swift */,
+				C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */,
+				C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */,
 				0D68DDE3D4CF12D04A2B2C9A /* ProviderCardView.swift */,
 				0C9EAEE3FB3E92F5916A9D99 /* ProviderSettingsCard.swift */,
 				9C40286DEA79D4833AD3CDE1 /* QuotaBar.swift */,
@@ -352,6 +358,8 @@
 				85579BCEA5511DA502574C2C /* AppEnvironment.swift in Sources */,
 				124FC7C2A048B784220DCB8F /* Format.swift in Sources */,
 				DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */,
+				C0FFEE04C0FFEE04C0FFEE04 /* InitialFocusSuppressor.swift in Sources */,
+				C0FFEE02C0FFEE02C0FFEE02 /* WebLoginSheet.swift in Sources */,
 				5A6AB22C40B170B25ACC780F /* ProviderCardView.swift in Sources */,
 				C8C06E822BC7995617B0EC21 /* ProviderSettingsCard.swift in Sources */,
 				05E8BEDC03173700EF304B82 /* QuotaBar.swift in Sources */,

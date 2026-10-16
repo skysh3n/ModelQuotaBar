@@ -55,7 +55,7 @@ if [ -n "${NO_SIGN:-}" ]; then
   args+=("CODE_SIGNING_ALLOWED=NO" "CODE_SIGNING_REQUIRED=NO")
 fi
 
-echo "==> xcodebuild $CONFIGURATION（完整日志：$LOG）"
+echo "==> xcodebuild ${CONFIGURATION}（完整日志：${LOG}）"
 # 完整输出落盘，终端只看关键行；用日志判断成败，避免管道吞掉退出码。
 xcodebuild "${args[@]}" > "$LOG" 2>&1 || true
 grep -E "error:|Signing Identity|BUILD (SUCCEEDED|FAILED)" "$LOG" | sort -u | head -20

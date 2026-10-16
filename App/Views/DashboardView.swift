@@ -4,15 +4,12 @@ import WidgetKit
 /// 主窗口。上半部分是额度概览，下半部分是配置。
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var environment
-    @FocusState private var focusedField: String?
-    private static let focusSinkID = "focus-sink"
 
     private var store: QuotaStore { environment.store }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                focusSink
                 quotaSection
                 Divider()
                 sourcesSection
@@ -23,19 +20,8 @@ struct DashboardView: View {
         }
         .frame(width: 520, height: 620)
         // macOS 会把窗口里第一个可输入控件设为初始 first responder，于是「控制台会话
-        // Cookie」一打开就是选中态。试过 defaultFocus 给 nil、给「刷新」按钮，都拦不住
-        // （按钮默认不参与 macOS 的焦点环）。这里放一个零尺寸、不画焦点环的可聚焦元素
-        // 专门接住默认焦点——焦点有了归属就不会落到输入框上，也不依赖系统设置。
-        .defaultFocus($focusedField, Self.focusSinkID)
-    }
-
-    /// 只用来接住窗口默认焦点的隐形元素，不显示、不占位。
-    private var focusSink: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focusedField, equals: Self.focusSinkID)
+        // Cookie」一打开就是选中态。SwiftUI 的 defaultFocus 拦不住，落到 AppKit 处理。
+        .suppressingInitialTextFieldFocus()
     }
 
     // MARK: - 额度概览

@@ -12,9 +12,14 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         summary: "查询百炼 Token Plan 个人版的 5 小时 / 每周 / 每月额度用量与剩余 Credits。",
         consoleURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
         consoleHint:
-            "打开控制台并登录后，按 F12 打开开发者工具 → Network → 刷新页面 → " +
-            "任选一个发往 bailian-cs.console.aliyun.com 的请求 → 在 Request Headers 里找到 " +
-            "Cookie，复制 login_aliyunid_ticket 的值（或整段 Cookie）。"
+            "也可以点「登录获取」：在弹出的窗口里登录百炼控制台，App 会自动取到饼干，不用手动复制；" +
+            "想手动的话，在控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求里，" +
+            "复制 Request Headers 里 login_aliyunid_ticket 的值。",
+        webLogin: WebLoginSpec(
+            url: QwenTokenPlanRegion.chinaMainland.consoleURL,
+            cookieName: "login_aliyunid_ticket",
+            targetFieldID: "cookie",
+            hint: "在弹出的窗口里登录百炼控制台。登录成功、页面能打开后，App 会自动取到会话凭据。")
     )
 
     public static let credentialFields: [CredentialField] = [

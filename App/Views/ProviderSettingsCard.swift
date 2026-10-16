@@ -9,6 +9,7 @@ struct ProviderSettingsCard: View {
     @State private var credential = ProviderCredential()
     @State private var testState: TestState = .idle
     @State private var saveError: String?
+    @State private var isShowingWebLogin = false
 
     private enum TestState: Equatable {
         case idle
@@ -156,6 +157,10 @@ struct ProviderSettingsCard: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
+                if metadata.webLogin != nil {
+                    Button("登录获取") { isShowingWebLogin = true }
+                        .buttonStyle(.borderedProminent)
+                }
                 Button("测试连接") { runTest() }
                     .disabled(testState == .testing)
                 if let url = metadata.consoleURL {
@@ -163,6 +168,19 @@ struct ProviderSettingsCard: View {
                         .font(.callout)
                 }
                 Spacer()
+            }
+            .sheet(isPresented: $isShowingWebLogin) {
+                if let spec = metadata.webLogin {
+                    WebLoginSheet(
+                        spec: spec,
+                        onCaptured: { value in
+                            credential[spec.targetFieldID] = value
+                            persist()
+                            isShowingWebLogin = false
+                            runTest()
+                        },
+                        onCancel: { isShowingWebLogin = false })
+                }
             }
 
             if let hint = metadata.consoleHint {
