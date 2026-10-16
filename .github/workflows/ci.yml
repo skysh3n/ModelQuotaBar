@@ -1,9 +1,17 @@
 name: CI
 
+# 仓库公开之前不自动跑。
+#
+# 原因：macOS 运行器的计费系数是 Linux 的 10 倍，而私有仓库每月免费额度只有
+# 2000 分钟，换算成 macOS 约 200 分钟——每次 push 都跑会很快耗光。
+# 公开仓库的 Actions 不限分钟，所以仓库公开后把下面改回 push / pull_request 即可：
+#
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build-and-test:
