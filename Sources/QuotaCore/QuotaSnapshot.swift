@@ -67,6 +67,8 @@ public struct QuotaSnapshot: Sendable {
     public var planName: String?
     /// 套餐状态，例如「VALID」。
     public var status: String?
+    /// 账户是否可继续调用（余额型来源）。套餐型来源为 nil。
+    public var isAvailable: Bool?
     /// 所有额度窗口，按展示顺序排列。
     public var windows: [QuotaWindow]
     /// 附加额度包 / 充值余额，没有则为 nil。
@@ -89,6 +91,7 @@ public struct QuotaSnapshot: Sendable {
         accountLabel: String? = nil,
         planName: String? = nil,
         status: String? = nil,
+        isAvailable: Bool? = nil,
         windows: [QuotaWindow] = [],
         balance: CreditBalance? = nil,
         expiresAt: Date? = nil,
@@ -98,6 +101,7 @@ public struct QuotaSnapshot: Sendable {
         self.accountLabel = accountLabel
         self.planName = planName
         self.status = status
+        self.isAvailable = isAvailable
         self.windows = windows
         self.balance = balance
         self.expiresAt = expiresAt

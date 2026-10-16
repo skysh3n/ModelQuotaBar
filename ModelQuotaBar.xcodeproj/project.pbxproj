@@ -43,6 +43,8 @@
 		F0491DB4C98A8BA1BCFEE0F8 /* AliyunConsoleGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */; };
 		F3C274C563002C172523478D /* QuotaWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8FCA2449A2AD3BAC7A0150 /* QuotaWidgetBundle.swift */; };
 		FA9A83FAF27F828921912C2C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79204A0AF7D374F4C6CC7F2C /* AppSettings.swift */; };
+		A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
+		A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +99,7 @@
 		E4D958D3FB8832252D609B9A /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		E5B4D59F3F5A9B7C3C25820C /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuotaBarApp.swift; sourceTree = "<group>"; };
+		D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +124,7 @@
 			isa = PBXGroup;
 			children = (
 				1B60B052C4689661FD7AD3F9 /* QwenTokenPlan */,
+				DEE5E1DEE5E1DEE5E1DEE5E1 /* DeepSeek */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -144,6 +148,14 @@
 				A4EB5A1490582BEFAD01670A /* QwenTokenPlanRegion.swift */,
 			);
 			path = QwenTokenPlan;
+			sourceTree = "<group>";
+		};
+		DEE5E1DEE5E1DEE5E1DEE5E1 /* DeepSeek */ = {
+			isa = PBXGroup;
+			children = (
+				D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */,
+			);
+			path = DeepSeek;
 			sourceTree = "<group>";
 		};
 		2644D684CC7CAAA6916C4A28 /* Views */ = {
@@ -351,6 +363,7 @@
 				F0491DB4C98A8BA1BCFEE0F8 /* AliyunConsoleGatewayClient.swift in Sources */,
 				A4267A73A74595193FBE2D02 /* QwenTokenPlanProvider.swift in Sources */,
 				7D540B781D4AFE876984F81A /* QwenTokenPlanRegion.swift in Sources */,
+				A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -372,6 +385,7 @@
 				6E676EC6BE8ADD3F07674D93 /* AliyunConsoleGatewayClient.swift in Sources */,
 				EF1D13C72BA678EA65102381 /* QwenTokenPlanProvider.swift in Sources */,
 				024CB13C214B63C94FADEACD /* QwenTokenPlanRegion.swift in Sources */,
+				A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

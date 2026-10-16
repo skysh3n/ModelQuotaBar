@@ -27,6 +27,7 @@ struct ProviderSettingsCard: View {
             if isEnabled {
                 Divider()
                 fields
+                cadenceLine
                 footer
             }
         }
@@ -60,7 +61,7 @@ struct ProviderSettingsCard: View {
                     } else {
                         credential = ProviderCredential()
                     }
-                    Task { await environment.store.refreshAll() }
+                    environment.providersDidChange()
                 }))
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -69,6 +70,22 @@ struct ProviderSettingsCard: View {
     }
 
     // MARK: - 表单
+
+    private var cadenceLine: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.tertiary)
+            Text(Self.cadenceText(provider.refreshInterval))
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+
+    static func cadenceText(_ interval: TimeInterval) -> String {
+        interval < 60
+            ? "实时刷新（约每 \(Int(interval)) 秒轮询一次）"
+            : "每 \(Int(interval / 60)) 分钟刷新一次"
+    }
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 12) {

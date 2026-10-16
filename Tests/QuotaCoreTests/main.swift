@@ -7,4 +7,5 @@ exit(TestRunner.run([
     JSONSearchTests.suite,
     QuotaWindowTests.suite,
     SharedStoreTests.suite,
+    DeepSeekTests.suite,
 ]))

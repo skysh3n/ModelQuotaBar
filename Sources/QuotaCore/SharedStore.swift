@@ -128,12 +128,16 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     public var vendor: String
     /// 套餐名，如「Pro 专业版」。
     public var planName: String?
-    /// 主窗口标题，如「每月」。
-    public var primaryTitle: String
-    /// 主窗口剩余比例，0...1。
-    public var primaryRemainingRatio: Double
+    /// 主窗口标题，如「每月」。纯余额型来源（DeepSeek）为 nil。
+    public var primaryTitle: String?
+    /// 主窗口剩余比例，0...1。纯余额型来源为 nil。
+    public var primaryRemainingRatio: Double?
     /// 主窗口重置时间。
     public var primaryResetsAt: Date?
+    /// 账户余额（充值型来源，如 DeepSeek）。
+    public var balanceRemaining: Double?
+    /// 余额币种，如「CNY」。
+    public var balanceUnit: String?
     /// 其余窗口，用于中等尺寸展示。
     public var secondaryWindows: [WidgetWindow]
     /// 套餐剩余天数。
@@ -144,9 +148,11 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
         id: String,
         vendor: String,
         planName: String?,
-        primaryTitle: String,
-        primaryRemainingRatio: Double,
+        primaryTitle: String?,
+        primaryRemainingRatio: Double?,
         primaryResetsAt: Date?,
+        balanceRemaining: Double? = nil,
+        balanceUnit: String? = nil,
         secondaryWindows: [WidgetWindow],
         remainingDays: Int?,
         updatedAt: Date
@@ -157,9 +163,34 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
         self.primaryTitle = primaryTitle
         self.primaryRemainingRatio = primaryRemainingRatio
         self.primaryResetsAt = primaryResetsAt
+        self.balanceRemaining = balanceRemaining
+        self.balanceUnit = balanceUnit
         self.secondaryWindows = secondaryWindows
         self.remainingDays = remainingDays
         self.updatedAt = updatedAt
+    }
+
+    /// 是否为纯余额型来源（没有时间窗口，只有钱）。
+    public var isBalanceOnly: Bool {
+        primaryRemainingRatio == nil && balanceRemaining != nil
+    }
+}
+
+/// 币种符号。余额型来源展示金额时用。
+public enum CurrencySymbol {
+    public static func prefix(for unit: String) -> String {
+        switch unit.uppercased() {
+        case "CNY": "¥"
+        case "USD": "$"
+        case "EUR": "€"
+        case "JPY": "¥"
+        default: "\(unit) "
+        }
+    }
+
+    /// 金额展示：保留两位小数，带币种符号。
+    public static func format(_ value: Double, unit: String) -> String {
+        "\(prefix(for: unit))\(String(format: "%.2f", value))"
     }
 }
 
@@ -198,17 +229,18 @@ public extension QuotaSnapshot {
     /// 转成小组件用的精简快照。
     func widgetSnapshot(
         id: ProviderID,
-        vendor: String,
-        fallbackTitle: String = "套餐"
+        vendor: String
     ) -> WidgetSnapshot {
         let primary = primaryWindow
         return WidgetSnapshot(
             id: id.rawValue,
             vendor: vendor,
             planName: planName,
-            primaryTitle: primary?.title ?? fallbackTitle,
-            primaryRemainingRatio: primary?.remainingRatio ?? 0,
+            primaryTitle: primary?.title,
+            primaryRemainingRatio: primary?.remainingRatio,
             primaryResetsAt: primary?.resetsAt,
+            balanceRemaining: balance?.remaining,
+            balanceUnit: balance?.unit,
             secondaryWindows: windows
                 .filter { $0.id != primary?.id }
                 .map {

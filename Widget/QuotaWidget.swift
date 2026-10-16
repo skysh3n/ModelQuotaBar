@@ -84,8 +84,8 @@ struct SmallWidgetView: View {
     let snapshot: WidgetSnapshot
     let mode: WidgetSettings.DisplayMode
 
-    private var ratio: Double {
-        mode == .remainingPercent ? snapshot.primaryRemainingRatio : 1 - snapshot.primaryRemainingRatio
+    private func displayRatio(_ ratio: Double) -> Double {
+        mode == .remainingPercent ? ratio : 1 - ratio
     }
 
     var body: some View {
@@ -94,17 +94,29 @@ struct SmallWidgetView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(String(format: "%.1f%%", ratio * 100))
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
-                .foregroundStyle(WidgetPalette.color(remainingRatio: snapshot.primaryRemainingRatio))
-            Text("\(snapshot.primaryTitle)\(mode == .remainingPercent ? "剩余" : "已用")")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            WidgetProgressBar(remainingRatio: snapshot.primaryRemainingRatio)
+            if let ratio = snapshot.primaryRemainingRatio {
+                Text(String(format: "%.1f%%", displayRatio(ratio) * 100))
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
+                Text("\(snapshot.primaryTitle ?? "套餐")\(mode == .remainingPercent ? "剩余" : "已用")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                WidgetProgressBar(remainingRatio: ratio)
+            } else if let balance = snapshot.balanceRemaining {
+                Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text("账户余额")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
         }
     }
 }
@@ -115,13 +127,13 @@ struct MediumWidgetView: View {
     let snapshot: WidgetSnapshot
     let mode: WidgetSettings.DisplayMode
 
-    private var ratio: Double {
-        mode == .remainingPercent ? snapshot.primaryRemainingRatio : 1 - snapshot.primaryRemainingRatio
+    private func displayRatio(_ ratio: Double) -> Double {
+        mode == .remainingPercent ? ratio : 1 - ratio
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            // 左半边：主窗口，和小尺寸保持同一套视觉。
+            // 左半边：主窗口（或余额），和小尺寸保持同一套视觉。
             VStack(alignment: .leading, spacing: 6) {
                 Text(snapshot.vendor)
                     .font(.caption)
@@ -134,20 +146,31 @@ struct MediumWidgetView: View {
                         .background(.tint.opacity(0.15), in: Capsule())
                 }
                 Spacer(minLength: 0)
-                Text(String(format: "%.1f%%", ratio * 100))
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                    .foregroundStyle(WidgetPalette.color(remainingRatio: snapshot.primaryRemainingRatio))
-                Text("\(snapshot.primaryTitle)\(mode == .remainingPercent ? "剩余" : "已用")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                WidgetProgressBar(remainingRatio: snapshot.primaryRemainingRatio)
+                if let ratio = snapshot.primaryRemainingRatio {
+                    Text(String(format: "%.1f%%", displayRatio(ratio) * 100))
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                        .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
+                    Text("\(snapshot.primaryTitle ?? "套餐")\(mode == .remainingPercent ? "剩余" : "已用")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    WidgetProgressBar(remainingRatio: ratio)
+                } else if let balance = snapshot.balanceRemaining {
+                    Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text("账户余额")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // 右半边：其余时间窗 + 套餐有效期。
+            // 右半边：其余时间窗 + 套餐有效期 / 更新时间。
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(snapshot.secondaryWindows) { window in
                     VStack(alignment: .leading, spacing: 3) {
@@ -167,6 +190,10 @@ struct MediumWidgetView: View {
                 Spacer(minLength: 0)
                 if let days = snapshot.remainingDays {
                     Text("套餐剩余 \(days) 天")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else if snapshot.isBalanceOnly {
+                    Text("实时余额")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

@@ -90,21 +90,18 @@ struct DashboardView: View {
     // MARK: - 通用
 
     private var generalSection: some View {
-        @Bindable var settings = environment.settings
-
         return VStack(alignment: .leading, spacing: 12) {
             Text("通用")
                 .font(.headline)
 
-            LabeledContent("自动刷新") {
-                Picker("", selection: $settings.refreshInterval) {
-                    ForEach(AppSettings.refreshIntervalOptions, id: \.self) { interval in
-                        Text(Self.refreshLabel(interval)).tag(interval)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 150)
+            LabeledContent("刷新") {
+                Text("实时")
+                    .foregroundStyle(.secondary)
             }
+            Text("每个来源按自己的节奏轮询（DeepSeek 约每 5 秒，千问每 5 分钟），回到前台或系统唤醒时立即刷新；关掉本窗口后仍在后台刷新，桌面小组件会跟着更新。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             LabeledContent("开机自动启动") {
                 Toggle("", isOn: Binding(
@@ -128,21 +125,6 @@ struct DashboardView: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-        .onChange(of: settings.refreshInterval) { _, _ in
-            environment.store.startAutoRefresh()
-        }
-    }
-
-    private static func refreshLabel(_ interval: TimeInterval) -> String {
-        switch interval {
-        case 0: "不自动刷新"
-        case 60: "每分钟"
-        case 300: "每 5 分钟"
-        case 900: "每 15 分钟"
-        case 1800: "每 30 分钟"
-        case 3600: "每小时"
-        default: "每 \(Int(interval / 60)) 分钟"
         }
     }
 

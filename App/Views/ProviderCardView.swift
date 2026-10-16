@@ -48,14 +48,18 @@ struct ProviderCardView: View {
 
     private func snapshotBody(_ snapshot: QuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let primary = snapshot.primaryWindow {
-                heroNumber(primary)
-            }
-            VStack(alignment: .leading, spacing: 9) {
-                ForEach(snapshot.windows) { window in
-                    QuotaWindowRow(
-                        window: window,
-                        isPrimary: window.id == snapshot.primaryWindow?.id)
+            if snapshot.windows.isEmpty, let balance = snapshot.balance {
+                balanceHero(balance, isAvailable: snapshot.isAvailable)
+            } else {
+                if let primary = snapshot.primaryWindow {
+                    heroNumber(primary)
+                }
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(snapshot.windows) { window in
+                        QuotaWindowRow(
+                            window: window,
+                            isPrimary: window.id == snapshot.primaryWindow?.id)
+                    }
                 }
             }
             footnote(snapshot)
@@ -75,10 +79,30 @@ struct ProviderCardView: View {
         }
     }
 
+    private func balanceHero(_ balance: CreditBalance, isAvailable: Bool?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(CurrencySymbol.format(balance.remaining, unit: balance.unit))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(isAvailable == false ? Color.orange : Color.primary)
+                Text("账户余额")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            if isAvailable == false {
+                Text("余额不足，API 调用会被拒绝")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
     @ViewBuilder
     private func footnote(_ snapshot: QuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            if let balance = snapshot.balance {
+            if let balance = snapshot.balance, !snapshot.windows.isEmpty {
                 Text("用量包剩余 \(Format.credits(balance.remaining)) \(balance.unit)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

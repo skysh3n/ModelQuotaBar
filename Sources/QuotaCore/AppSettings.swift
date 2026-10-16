@@ -2,6 +2,10 @@ import Foundation
 import Observation
 
 /// 应用设置。凭据不在这里，见 `CredentialStore`。
+///
+/// 刷新节奏不在这里配置：每个 Provider 自带 `refreshInterval`
+/// （DeepSeek 余额接口轻，5 秒一轮做到近似实时；千问走控制台网关，保守一些），
+/// 再叠加「回到前台 / 系统唤醒立即刷」的事件触发。全局间隔设置反而会让两边都对不上。
 @MainActor
 @Observable
 public final class AppSettings {
@@ -9,18 +13,10 @@ public final class AppSettings {
         didSet { persist() }
     }
 
-    /// 自动刷新间隔（秒）。0 表示不自动刷新。
-    public var refreshInterval: TimeInterval {
-        didSet { persist() }
-    }
-
-    public static let refreshIntervalOptions: [TimeInterval] = [60, 300, 900, 1800, 3600, 0]
-
     private let defaults: UserDefaults
 
     private enum Key {
         static let enabledProviders = "enabledProviderIDs"
-        static let refreshInterval = "refreshInterval"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -28,10 +24,6 @@ public final class AppSettings {
 
         let storedIDs = defaults.stringArray(forKey: Key.enabledProviders) ?? []
         self.enabledProviderIDs = storedIDs.map(ProviderID.init(rawValue:))
-
-        let storedInterval = defaults.object(forKey: Key.refreshInterval) as? TimeInterval
-        // 默认 15 分钟：足够跟上额度变化，也不会频繁打扰百炼控制台网关。
-        self.refreshInterval = storedInterval ?? 900
     }
 
     /// 已启用的 Provider。
@@ -55,6 +47,5 @@ public final class AppSettings {
 
     private func persist() {
         defaults.set(enabledProviderIDs.map(\.rawValue), forKey: Key.enabledProviders)
-        defaults.set(refreshInterval, forKey: Key.refreshInterval)
     }
 }
