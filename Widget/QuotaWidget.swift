@@ -28,8 +28,30 @@ extension QuotaEntry {
     }
 }
 
-struct QuotaTimelineProvider: TimelineProvider {
-    /// 本小组件固定显示哪个来源。
+struct QuotaTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> QuotaEntry {
+        .placeholder
+    }
+
+    func snapshot(for configuration: SelectSourceIntent, in context: Context) async -> QuotaEntry {
+        context.isPreview ? .placeholder : Self.readEntry(source: configuration.source)
+    }
+
+    func timeline(for configuration: SelectSourceIntent, in context: Context) async -> Timeline<QuotaEntry> {
+        // 小组件自己不发网络请求：数据由主应用（或后台代理）抓取后写进共享容器。
+        // 正常刷新靠主进程在数据变化时 reloadAllTimelines；这里给个 15 分钟兜底。
+        let entry = Self.readEntry(source: configuration.source)
+        let next = Date().addingTimeInterval(15 * 60)
+        return Timeline(entries: [entry], policy: .after(next))
+    }
+
+    private static func readEntry(source: WidgetSource) -> QuotaEntry {
+        QuotaEntry(date: Date(), snapshots: source.filtered(SharedStore.loadSnapshots()))
+    }
+}
+
+/// 固定来源的时间线 Provider，供「· 通义千问」「· DeepSeek」两个固定条目使用。
+struct FixedSourceProvider: TimelineProvider {
     let source: WidgetSource
 
     func placeholder(in context: Context) -> QuotaEntry {
@@ -41,11 +63,8 @@ struct QuotaTimelineProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuotaEntry>) -> Void) {
-        // 小组件自己不发网络请求：数据由主应用（或后台代理）抓取后写进共享容器。
-        // 正常刷新靠主进程在数据变化时 reloadAllTimelines；这里给个 15 分钟兜底。
         let entry = Self.readEntry(source: source)
-        let next = Date().addingTimeInterval(15 * 60)
-        completion(Timeline(entries: [entry], policy: .after(next)))
+        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60))))
     }
 
     private static func readEntry(source: WidgetSource) -> QuotaEntry {
@@ -212,26 +231,29 @@ private enum WidgetPalette {
 
 // MARK: - 配置
 
+/// 可配置来源的小组件。右键 →「编辑」可切换显示哪个来源（默认全部）。
 struct QuotaWidget: Widget {
     static let kind = "QuotaWidget"
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: QuotaTimelineProvider(source: .auto)) { entry in
+        AppIntentConfiguration(kind: Self.kind, intent: SelectSourceIntent.self, provider: QuotaTimelineProvider()) { entry in
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度")
-        .description("显示所有来源的剩余额度与余额。")
+        .description("显示大模型套餐的剩余额度与余额，右键可切换来源。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
+/// 固定来源的小组件：不依赖编辑界面，直接各占一个组件库条目，
+/// 用户想「一个千问一个 DeepSeek」时各加一个即可。
 struct QuotaQwenWidget: Widget {
     static let kind = "QuotaQwenWidget"
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: QuotaTimelineProvider(source: .qwen)) { entry in
+        StaticConfiguration(kind: Self.kind, provider: FixedSourceProvider(source: .qwen)) { entry in
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度 · 通义千问")
-        .description("显示通义千问 Token Plan 的剩余额度。")
+        .description("固定显示通义千问 Token Plan 的剩余额度。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -239,11 +261,11 @@ struct QuotaQwenWidget: Widget {
 struct QuotaDeepSeekWidget: Widget {
     static let kind = "QuotaDeepSeekWidget"
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: QuotaTimelineProvider(source: .deepseek)) { entry in
+        StaticConfiguration(kind: Self.kind, provider: FixedSourceProvider(source: .deepseek)) { entry in
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度 · DeepSeek")
-        .description("显示 DeepSeek 账户余额。")
+        .description("固定显示 DeepSeek 账户余额。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
