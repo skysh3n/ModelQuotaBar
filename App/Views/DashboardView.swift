@@ -147,7 +147,7 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("把小组件放到桌面：在桌面空白处右键 →「编辑小组件」→ 搜索「大模型额度」→ 拖到桌面。中尺寸会同时列出千问与 DeepSeek。")
+            Text("把小组件放到桌面：桌面右键 →「编辑小组件」→ 搜索「大模型额度」。组件库里现在有三个条目——「大模型额度」显示全部，「·通义千问」「·DeepSeek」各显示一家，可按需各加一个。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

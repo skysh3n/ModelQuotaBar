@@ -8,4 +8,5 @@ exit(TestRunner.run([
     QuotaWindowTests.suite,
     SharedStoreTests.suite,
     DeepSeekTests.suite,
+    WidgetSourceTests.suite,
 ]))
