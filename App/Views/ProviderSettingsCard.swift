@@ -10,6 +10,7 @@ struct ProviderSettingsCard: View {
     @State private var testState: TestState = .idle
     @State private var saveError: String?
     @State private var isShowingWebLogin = false
+    @State private var importMessage: String?
 
     private enum TestState: Equatable {
         case idle
@@ -160,6 +161,7 @@ struct ProviderSettingsCard: View {
                 if metadata.webLogin != nil {
                     Button("登录获取") { isShowingWebLogin = true }
                         .buttonStyle(.borderedProminent)
+                    Button("从浏览器导入") { importFromBrowser() }
                 }
                 Button("测试连接") { runTest() }
                     .disabled(testState == .testing)
@@ -196,6 +198,12 @@ struct ProviderSettingsCard: View {
                     .font(.caption2)
                     .foregroundStyle(.red)
             }
+            if let importMessage {
+                Text(importMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             statusView
         }
     }
@@ -222,8 +230,21 @@ struct ProviderSettingsCard: View {
         }
     }
 
-    private func runTest() {
-        testState = .testing
+    /// 从 Safari / Chrome 里读现成的登录凭据——借用浏览器已经记住的账号密码。
+    private func importFromBrowser() {
+        guard let spec = metadata.webLogin else { return }
+        let result = BrowserCookieImporter.findCookie(named: spec.cookieName)
+        guard let imported = result.imported else {
+            importMessage = result.failures.joined(separator: "\n")
+            return
+        }
+        credential[spec.targetFieldID] = imported.value
+        persist()
+        importMessage = "已从 \(imported.browser.rawValue) 导入登录凭据。"
+        Task { await environment.refresh() }
+    }
+
+    private func runTest() {        testState = .testing
         Task {
             do {
                 let snapshot = try await provider.fetchSnapshot(credential: credential)
