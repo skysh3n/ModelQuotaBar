@@ -40,7 +40,6 @@
 		D752F7FB6FBA434B73588100 /* QuotaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3029F8304E38C1EC45109735 /* QuotaWidget.swift */; };
 		DA91F86B97D31DB64BD959C9 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50FF063F3C9826204FAABBD5 /* ProviderRegistry.swift */; };
 		DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE34C5D4B141CEA9435B755 /* DashboardView.swift */; };
-		E2E29B2CF2929A427DE7CC12 /* BackgroundAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */; };
 		EB86007EB858B22E11981432 /* QuotaWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 253B8FBE8D0FB3DA1DA94DE0 /* QuotaWidget.appex */; };
 		EE7BEEECA19199C97961EE43 /* ModelQuotaBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */; };
 		EF1D13C72BA678EA65102381 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
@@ -96,7 +95,6 @@
 		9DAB9DEC9AE4F3506F165889 /* QuotaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaProvider.swift; sourceTree = "<group>"; };
 		A38B66B45E6A2F7C16220140 /* FormEncoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormEncoding.swift; sourceTree = "<group>"; };
 		A4EB5A1490582BEFAD01670A /* QwenTokenPlanRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QwenTokenPlanRegion.swift; sourceTree = "<group>"; };
-		ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundAgent.swift; sourceTree = "<group>"; };
 		AC8AA3FAAD30B96AE886B364 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AD9A6D5A5B82F8BA5A2C420F /* AliyunConsoleGatewayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AliyunConsoleGatewayClient.swift; sourceTree = "<group>"; };
 		B64E6E3907156FBDC76E237D /* QuotaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaStore.swift; sourceTree = "<group>"; };
@@ -180,7 +178,6 @@
 			children = (
 				FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */,
 				76E1D080CA8EEEE7201A5759 /* AppEnvironment.swift */,
-				ABB1FD3729B4602FA8660502 /* BackgroundAgent.swift */,
 				3DAAE2727F4978481D29A802 /* Support */,
 				2644D684CC7CAAA6916C4A28 /* Views */,
 				9BA999B3A811448FD33B3282 /* Resources */,
@@ -353,7 +350,6 @@
 			files = (
 				EE7BEEECA19199C97961EE43 /* ModelQuotaBarApp.swift in Sources */,
 				85579BCEA5511DA502574C2C /* AppEnvironment.swift in Sources */,
-				E2E29B2CF2929A427DE7CC12 /* BackgroundAgent.swift in Sources */,
 				124FC7C2A048B784220DCB8F /* Format.swift in Sources */,
 				DF1953DA804AB9FF7FBF1D89 /* DashboardView.swift in Sources */,
 				5A6AB22C40B170B25ACC780F /* ProviderCardView.swift in Sources */,

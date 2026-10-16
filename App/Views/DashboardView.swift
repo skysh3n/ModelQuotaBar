@@ -4,7 +4,6 @@ import WidgetKit
 /// 主窗口。上半部分是额度概览，下半部分是配置。
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var environment
-    @State private var backgroundAgentError: String?
 
     private var store: QuotaStore { environment.store }
 
@@ -14,8 +13,6 @@ struct DashboardView: View {
                 quotaSection
                 Divider()
                 sourcesSection
-                Divider()
-                generalSection
                 Divider()
                 widgetSection
             }
@@ -82,42 +79,6 @@ struct DashboardView: View {
                 .font(.headline)
             ForEach(ProviderRegistry.all) { provider in
                 ProviderSettingsCard(provider: provider)
-            }
-        }
-    }
-
-    // MARK: - 通用
-
-    private var generalSection: some View {
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("通用")
-                .font(.headline)
-
-            LabeledContent("后台常驻（可选）") {
-                Toggle("", isOn: Binding(
-                    get: { BackgroundAgent.isInstalled },
-                    set: { newValue in
-                        do {
-                            try BackgroundAgent.setEnabled(newValue)
-                            backgroundAgentError = nil
-                        } catch {
-                            backgroundAgentError = error.localizedDescription
-                        }
-                    }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            }
-            Text("可选项。不开也能正常用；开启后即使退出本应用，后台仍留一个无窗口进程，让刷新更跟手（切到桌面立刻更新）。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let backgroundAgentError {
-                Text(backgroundAgentError)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

@@ -7,11 +7,6 @@ import WidgetKit
 @MainActor
 @Observable
 final class AppEnvironment {
-    /// 是否以 `--background` 无窗口模式运行（由 LaunchAgent 拉起）。
-    /// nonisolated：只读进程参数，不碰任何 actor 状态，供 AppDelegate 等非主 actor 上下文读取。
-    nonisolated static let isBackgroundMode =
-        ProcessInfo.processInfo.arguments.contains(BackgroundAgent.backgroundFlag)
-
     let settings: AppSettings
     let store: QuotaStore
 
