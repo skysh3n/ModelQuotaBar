@@ -13,8 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // 关掉窗口不退出进程：应用继续跑着，切到桌面时小组件能立刻拿到最新数据。
-        false
+        // 关掉主窗口就退出整个应用。
+        // 注意：会话保活只在本应用运行时生效，退出后保活也会停——但小组件的
+        // timeline provider 是独立抓数据的，仍会按系统调度继续刷新。
+        true
     }
 }
 
