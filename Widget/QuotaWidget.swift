@@ -105,14 +105,18 @@ struct QuotaWidgetEntryView: View {
 }
 
 /// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
+///
+/// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
+/// 既够手指/鼠标点，也不会在卡片里显得突兀。
 private struct WidgetRefreshButton: View {
     var body: some View {
         Button(intent: RefreshQuotaIntent()) {
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .padding(3)
-                .contentShape(Rectangle())
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .background(.quaternary.opacity(0.7), in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("刷新额度")
