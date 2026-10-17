@@ -9,8 +9,6 @@ import WidgetKit
 final class AppEnvironment {
     let settings: AppSettings
     let store: QuotaStore
-    /// 后台会话保活：定期用网页登录态访问一次控制台，让会话续期。
-    let sessionKeeper = WebSessionKeeper()
 
     private var observers: [NSObjectProtocol] = []
     private var debouncedRefreshTask: Task<Void, Never>?
@@ -24,17 +22,10 @@ final class AppEnvironment {
             WidgetCenter.shared.reloadAllTimelines()
         }
 
-        sessionKeeper.onCredentialRefreshed = { [weak self] _ in
-            // 保活取回了新票，立刻用它刷一次数据。
-            Task { @MainActor [weak self] in await self?.refresh() }
-        }
-
         observeSystemEvents()
 
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.refresh()
-            self.startSessionKeeperIfNeeded()
+            await self?.refresh()
         }
     }
 
@@ -42,46 +33,10 @@ final class AppEnvironment {
 
     func refresh() async {
         await store.refreshAll()
-        await renewExpiredSessions()
-    }
-
-    /// 会话过期时用保活会话自动续期并重试一次。
-    ///
-    /// 不在这里弹登录窗口——续不上就照常把「会话已失效」显示在卡片上，
-    /// 由用户自己决定什么时候点「登录获取」。
-    private func renewExpiredSessions() async {
-        guard expiredLoginSpec() != nil, sessionKeeper.isRunning else { return }
-        await sessionKeeper.refreshNow()
-        await store.refreshAll()
-    }
-
-    /// 找出第一个「可以用网页登录解决」的过期来源。
-    private func expiredLoginSpec() -> (provider: ProviderID, spec: WebLoginSpec)? {
-        for provider in settings.activeProviders {
-            guard let spec = provider.metadata.webLogin,
-                  let error = store.results.first(where: { $0.id == provider.id })?.error,
-                  case .sessionExpired = error
-            else { continue }
-            return (provider.id, spec)
-        }
-        return nil
-    }
-
-    /// 启用了「登录获取」的来源才有可续期的网页登录态，保活才有意义。
-    private func startSessionKeeperIfNeeded() {
-        guard sessionKeeper.isRunning == false else { return }
-        for provider in settings.activeProviders
-        where settings.webLoginProviderIDs.contains(provider.id) {
-            guard let spec = provider.metadata.webLogin else { continue }
-            sessionKeeper.start(target: .init(providerID: provider.id, spec: spec))
-            return
-        }
     }
 
     /// 登录窗口拿到凭据后调用。
-    func didCaptureLogin(provider: ProviderID) {
-        settings.markWebLoginUsed(provider)
-        startSessionKeeperIfNeeded()
+    func didCaptureLogin() {
         Task { await refresh() }
     }
 

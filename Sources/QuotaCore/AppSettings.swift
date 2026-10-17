@@ -12,19 +12,10 @@ public final class AppSettings {
         didSet { persist() }
     }
 
-    /// 用过「登录获取」（内嵌网页登录）的来源。
-    ///
-    /// 只有这些来源才有可续期的网页登录态，后台保活才有意义；手动粘贴 Cookie 的
-    /// 情况没有登录态可用，保活只会白开一个网页。
-    public var webLoginProviderIDs: [ProviderID] {
-        didSet { persist() }
-    }
-
     private let defaults: UserDefaults
 
     private enum Key {
         static let enabledProviders = "enabledProviderIDs"
-        static let webLoginProviders = "webLoginProviderIDs"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -32,14 +23,6 @@ public final class AppSettings {
 
         let storedIDs = defaults.stringArray(forKey: Key.enabledProviders) ?? []
         self.enabledProviderIDs = storedIDs.map(ProviderID.init(rawValue:))
-
-        let webIDs = defaults.stringArray(forKey: Key.webLoginProviders) ?? []
-        self.webLoginProviderIDs = webIDs.map(ProviderID.init(rawValue:))
-    }
-
-    public func markWebLoginUsed(_ id: ProviderID) {
-        guard !webLoginProviderIDs.contains(id) else { return }
-        webLoginProviderIDs.append(id)
     }
 
     /// 已启用的 Provider。
@@ -63,6 +46,5 @@ public final class AppSettings {
 
     private func persist() {
         defaults.set(enabledProviderIDs.map(\.rawValue), forKey: Key.enabledProviders)
-        defaults.set(webLoginProviderIDs.map(\.rawValue), forKey: Key.webLoginProviders)
     }
 }
