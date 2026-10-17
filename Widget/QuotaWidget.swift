@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -95,6 +96,26 @@ struct QuotaWidgetEntryView: View {
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
+        // 右上角放一个刷新按钮：AppIntent 交互**不占**小组件的每日刷新预算，
+        // 所以这是唯一能做到「我看它的时候点一下就立刻更新」的公开机制。
+        .overlay(alignment: .topTrailing) {
+            WidgetRefreshButton()
+        }
+    }
+}
+
+/// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
+private struct WidgetRefreshButton: View {
+    var body: some View {
+        Button(intent: RefreshQuotaIntent()) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .padding(3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("刷新额度")
     }
 }
 

@@ -1,5 +1,33 @@
 import AppIntents
 import Foundation
+import WidgetKit
+
+/// 小组件里那个刷新按钮背后的意图。
+///
+/// WidgetKit 不提供「小组件被看到」的回调，所以没法做到「一被观察就自动刷新」。
+/// 系统支持的做法是交互式小组件：放置一个按钮，用户点它时在扩展进程里执行这个
+/// intent——正好就是「我看它的时候让它刷新」。
+struct RefreshQuotaIntent: AppIntent {
+    static let title: LocalizedStringResource = "刷新额度"
+
+    func perform() async throws -> some IntentResult {
+        let fresh = await QuotaFetcher.fetchAllWidgetSnapshots()
+        if !fresh.isEmpty {
+            SharedStore.save(fresh)
+        }
+        // 交互后让系统重绘小组件。
+        WidgetReloader.reload()
+        return .result()
+    }
+}
+
+/// WidgetKit 的 reload 只在本文件里用，单独包一层避免核心逻辑依赖 WidgetKit API 的细节。
+private enum WidgetReloader {
+    static func reload() {
+        // WidgetCenter 在扩展进程里可用。
+        WidgetKit.WidgetCenter.shared.reloadAllTimelines()
+    }
+}
 
 /// 小组件可显示的来源。
 ///
