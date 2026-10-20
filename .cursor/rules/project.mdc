@@ -1,0 +1,30 @@
+---
+description: 大模型额度（ModelQuotaBar）项目结构、构建测试命令与易踩的坑
+alwaysApply: true
+---
+
+# 项目概览
+
+macOS 应用 + 桌面小组件，查询大模型额度（通义千问 Token Plan、DeepSeek 余额、Cursor 订阅用量）。
+
+- `Sources/QuotaCore/`：核心逻辑，主应用与小组件扩展**都直接编译这份源码**（不是 Swift Package 依赖）。不要在这里 import WidgetKit / SwiftUI 之类的 UI 框架（`WidgetSource.swift` 例外）。
+- `App/`：主应用（SwiftUI，无沙盒）。`Widget/`：小组件扩展（有沙盒）。
+- `Sources/QuotaCore/Providers/`：每个厂商一个 Provider，在 `ProviderRegistry` 注册；小组件可选来源在 `WidgetSource` 里同步加 case。
+- 新增源文件要手动加进 `ModelQuotaBar.xcodeproj/project.pbxproj`（文件引用、分组，以及 app 和 widget **两个** target 的 Sources），`scripts/test.sh` 会自动带上，Xcode 不会。
+
+# 构建与测试
+
+- 测试：`./scripts/test.sh`（不用 `swift test`，测试执行器在 `Tests/QuotaCoreTests/TestSupport.swift`）。
+- 构建：`./scripts/build.sh`，只验证编译用 `NO_SIGN=1 ./scripts/build.sh`。产物在 `dist/`。
+- 构建目录必须放仓库外（默认 `~/Library/Caches/ModelQuotaBar/`）：仓库在 iCloud 同步的桌面，FileProvider 扩展属性会让 codesign 失败。
+- 在 Cursor 沙盒里编译会因 `swift-plugin-server` 被拦而报 `@Observable` 宏找不到，需在沙盒外执行。
+- 签名失败多半是钥匙串锁了（屏幕锁定），解锁后重试。
+
+# 设计约束（改动前先确认不违反）
+
+- **不用钥匙串存凭据**：本地构建签名每次变化，会反复弹密码框。凭据存共享容器里的 `credentials.json`（0600）。
+- **不用 App Group**：共享目录是小组件的沙盒容器，主应用直接往里写，见 `SharedStore`。改小组件 bundle ID 必须同步 `SharedStore.widgetBundleIdentifier`。
+- **不做定时轮询**：主应用只在打开时刷新一次，之后手动刷新；小组件自己抓数据，由系统调度。
+- **不引入需要额外系统授权的机制**（完全磁盘访问、读浏览器 Cookie 等）。
+- 千问会话**不会自动续期**，过期后重新「登录获取」。
+- 关闭主窗口即退出应用。

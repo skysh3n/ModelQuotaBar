@@ -7,6 +7,7 @@ public enum ProviderRegistry {
     public static let all: [ProviderDescriptor] = [
         QwenTokenPlanProvider.descriptor,
         DeepSeekProvider.descriptor,
+        CursorProvider.descriptor,
     ]
 
     public static func descriptor(for id: ProviderID) -> ProviderDescriptor? {

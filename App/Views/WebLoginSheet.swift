@@ -64,8 +64,16 @@ private struct ConsoleWebView: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.load(URLRequest(url: spec.url))
-        context.coordinator.startWatching(webView: webView, spec: spec, status: $status, onCaptured: onCaptured)
+        let coordinator = context.coordinator
+        let status = $status
+        Task { @MainActor in
+            // 服务端作废的会话 Cookie 仍会留在持久存储里，不先删掉的话，
+            // 轮询会在用户登录前就把这张过期的票据当成新凭据抓走。
+            await webView.configuration.websiteDataStore.httpCookieStore
+                .deleteCookies(named: spec.cookieName)
+            webView.load(URLRequest(url: spec.url))
+            coordinator.startWatching(webView: webView, spec: spec, status: status, onCaptured: onCaptured)
+        }
         return webView
     }
 
@@ -121,6 +129,14 @@ private extension WKHTTPCookieStore {
     func allCookies() async -> [HTTPCookie] {
         await withCheckedContinuation { continuation in
             getAllCookies { continuation.resume(returning: $0) }
+        }
+    }
+
+    func deleteCookies(named name: String) async {
+        for cookie in await allCookies() where cookie.name == name {
+            await withCheckedContinuation { continuation in
+                delete(cookie) { continuation.resume() }
+            }
         }
     }
 }

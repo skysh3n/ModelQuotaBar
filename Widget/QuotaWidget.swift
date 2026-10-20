@@ -9,12 +9,8 @@ struct QuotaEntry: TimelineEntry {
     let allSnapshots: [WidgetSnapshot]
     let sources: [WidgetSource]
 
-    /// 按勾选的来源过滤。一个都没勾（或都被删了）时退回全部，避免显示空白。
     var selectedSnapshots: [WidgetSnapshot] {
-        guard !sources.isEmpty else { return allSnapshots }
-        return allSnapshots.filter { snapshot in
-            sources.contains { $0.matches(snapshot) }
-        }
+        WidgetSource.select(sources, from: allSnapshots)
     }
 }
 
@@ -40,20 +36,19 @@ extension QuotaEntry {
     }
 }
 
-/// 小组件**自己**去抓最新数据——和天气小组件同一个模式，
-/// 因此不依赖主应用运行，也不依赖后台常驻。
-/// 抓不到（没凭据 / 断网）就退回共享容器里已有的快照，至少不显示空白。
-private func readQuotaEntry(sources: [WidgetSource]) async -> QuotaEntry {
-    let fresh = await QuotaFetcher.fetchAllWidgetSnapshots()
-    let snapshots: [WidgetSnapshot]
-    if fresh.isEmpty {
-        snapshots = SharedStore.loadSnapshots()
-    } else {
-        snapshots = fresh
-        // 回写一份，主应用下次打开时读到的是同一个数据。
-        SharedStore.save(fresh)
-    }
-    return QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)
+/// 只读共享容器里上次写好的快照。切换尺寸、编辑勾选时必须秒回，不能碰网络。
+private func cachedQuotaEntry(sources: [WidgetSource]) -> QuotaEntry {
+    QuotaEntry(date: Date(), allSnapshots: SharedStore.loadSnapshots(), sources: sources)
+}
+
+/// 只抓当前勾选的来源；结果盖到缓存上，未显示的供应商原样保留。
+private func refreshSelectedSources(_ sources: [WidgetSource]) async -> [WidgetSnapshot] {
+    let ids = Set(WidgetSource.effectiveDisplaySources(sources).map(\.rawValue))
+    let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
+    guard !fresh.isEmpty else { return SharedStore.loadSnapshots() }
+    let merged = SharedStore.mergeSnapshots(cached: SharedStore.loadSnapshots(), fresh: fresh)
+    SharedStore.save(merged)
+    return merged
 }
 
 /// 请求系统约 15 分钟后再刷（实际节奏由系统决定）。
@@ -67,12 +62,40 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> QuotaEntry { .placeholder }
 
     func snapshot(for configuration: SelectSourcesIntent, in context: Context) async -> QuotaEntry {
-        context.isPreview ? .placeholder : await readQuotaEntry(sources: configuration.sources)
+        // 编辑配置 / 切换尺寸时系统优先走这里，只出缓存，别卡在网络上。
+        context.isPreview ? .placeholder : cachedQuotaEntry(sources: configuration.sources)
     }
 
     func timeline(for configuration: SelectSourcesIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        let entry = await readQuotaEntry(sources: configuration.sources)
-        return Timeline(entries: [entry], policy: quotaRefreshPolicy())
+        let sources = configuration.sources
+        let cached = SharedStore.loadSnapshots()
+
+        // 有缓存就立刻交卷——切换尺寸也会重跑 timeline，这里绝不能 await 网络。
+        // 数据确实旧了，再在后台只刷新勾选的来源，抓完若有变化再 reload。
+        if !cached.isEmpty {
+            if WidgetSource.needsRefresh(
+                cached,
+                sources: sources,
+                available: WidgetSource.availableSources())
+            {
+                let before = cached
+                Task {
+                    let merged = await refreshSelectedSources(sources)
+                    if merged != before {
+                        WidgetReloader.reload()
+                    }
+                }
+            }
+            return Timeline(
+                entries: [QuotaEntry(date: Date(), allSnapshots: cached, sources: sources)],
+                policy: quotaRefreshPolicy())
+        }
+
+        // 冷启动：没有缓存才同步等一轮（仍只抓勾选的来源）。
+        let snapshots = await refreshSelectedSources(sources)
+        return Timeline(
+            entries: [QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)],
+            policy: quotaRefreshPolicy())
     }
 }
 
@@ -99,7 +122,7 @@ struct QuotaWidgetEntryView: View {
         // 右上角放一个刷新按钮：AppIntent 交互**不占**小组件的每日刷新预算，
         // 所以这是唯一能做到「我看它的时候点一下就立刻更新」的公开机制。
         .overlay(alignment: .topTrailing) {
-            WidgetRefreshButton()
+            WidgetRefreshButton(sources: entry.sources)
         }
     }
 }
@@ -109,8 +132,11 @@ struct QuotaWidgetEntryView: View {
 /// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
 /// 既够手指/鼠标点，也不会在卡片里显得突兀。
 private struct WidgetRefreshButton: View {
+    let sources: [WidgetSource]
+
     var body: some View {
-        Button(intent: RefreshQuotaIntent()) {
+        // 只刷新当前勾选的来源，没显示的供应商直接跳过。
+        Button(intent: RefreshQuotaIntent(sources: sources)) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -144,15 +170,23 @@ struct SmallWidgetView: View {
                 Text("\(snapshot.primaryTitle ?? "套餐")剩余")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
                 WidgetProgressBar(remainingRatio: ratio)
+                Spacer(minLength: 0)
+                if let credits = widgetCreditsText(snapshot) {
+                    Text(credits)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
             } else if let balance = snapshot.balanceRemaining {
                 Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                Text("账户余额")
+                Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -167,6 +201,14 @@ struct SmallWidgetView: View {
         // SwiftUI 会把它居中，看起来就比有进度条的千问卡片往右偏。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+}
+
+/// 有每周剩余时，再带上 Account balance 的剩余 Credits，如「$0.00 剩余」。
+private func widgetCreditsText(_ snapshot: WidgetSnapshot) -> String? {
+    guard snapshot.primaryRemainingRatio != nil,
+          let balance = snapshot.balanceRemaining
+    else { return nil }
+    return "\(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? "")) 剩余"
 }
 
 /// 小组件里的更新时间文案，如「14:20 更新」。
@@ -189,27 +231,37 @@ struct MediumWidgetView: View {
                 SourceColumn(snapshot: only, valueSize: 46)
             } else {
                 // 栏间距给得比一般间距宽：左栏的进度条会一直顶到分栏线，
-                // 太窄的话右栏看着像贴着它。
-                HStack(alignment: .top, spacing: 32) {
+                // 太窄的话右栏看着像贴着它。三栏时卡片放不下这么宽的间距。
+                HStack(alignment: .center, spacing: snapshots.count > 2 ? 16 : 32) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
                     }
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // 先按内容高度收紧，再在整张卡片里垂直居中（小组件里栏内 Spacer 经常不生效）。
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
-/// 一个来源一栏：厂商名 → 大数字 → 说明 → 底部件。
-/// 底部件窗口型是进度条、余额型是更新时间，两者都占固定高度，便于多栏底边对齐。
+/// 一个来源一栏：厂商名 → 大数字 → 说明 → 进度条槽 → 底栏。
+/// Cursor（相对截图对调后）：每周剩余 → 进度条 →「$x.xx 剩余」；
+/// 余额型在进度条槽留空，底栏放更新时间，与右边「$x.xx 剩余」齐平。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
     /// 数字字号。单来源时放大到 46，多栏时 30。
     var valueSize: CGFloat = 30
+    private let barHeight: CGFloat = 5
 
     private var subtitle: String {
-        snapshot.primaryTitle.map { "\($0)剩余" } ?? "账户余额"
+        if let title = snapshot.primaryTitle {
+            "\(title)剩余"
+        } else if snapshot.balanceUnit == "USD" {
+            "剩余 Credits"
+        } else {
+            "账户余额"
+        }
     }
 
     var body: some View {
@@ -223,22 +275,39 @@ private struct SourceColumn: View {
 
             Text(subtitle)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
+            // 进度条槽：有周剩余就画条，否则留同样高度，两栏「账户余额 / 每周剩余」齐平。
             Group {
                 if let ratio = snapshot.primaryRemainingRatio {
-                    WidgetProgressBar(remainingRatio: ratio, height: 4)
+                    WidgetProgressBar(remainingRatio: ratio, height: barHeight)
+                } else {
+                    Color.clear.frame(maxWidth: .infinity).frame(height: barHeight)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: barHeight)
+
+            // 底栏：Credits 放大；更新时间同槽对齐。
+            Group {
+                if let credits = widgetCreditsText(snapshot) {
+                    Text(credits)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 } else {
                     Text(widgetTimeText(snapshot.updatedAt))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-            .frame(height: 13, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 24, alignment: .center)
         }
-        // 内容整体在栏内垂直居中，避免顶部贴边、底部空一大块。
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -285,15 +354,18 @@ private struct WidgetProgressBar: View {
     var height: CGFloat = 5
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
-                Capsule()
-                    .fill(WidgetPalette.color(remainingRatio: remainingRatio))
-                    .frame(width: max(0, geometry.size.width * remainingRatio))
+        // 不用会抢空间的 GeometryReader 当根视图，避免把整栏撑开导致无法上下居中。
+        Capsule()
+            .fill(.quaternary)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .overlay(alignment: .leading) {
+                GeometryReader { geometry in
+                    Capsule()
+                        .fill(WidgetPalette.color(remainingRatio: remainingRatio))
+                        .frame(width: max(0, geometry.size.width * remainingRatio))
+                }
             }
-        }
-        .frame(height: height)
     }
 }
 

@@ -64,7 +64,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("还没有启用任何额度来源")
                 .font(.callout)
-            Text("在下面的「额度来源」里打开通义千问，填入控制台 Cookie 即可开始。")
+            Text("在下面的「额度来源」里打开一个来源，登录或填入凭据即可开始。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -18,9 +18,8 @@ public struct ProviderResult: Sendable, Identifiable {
 
 /// 额度查询的调度中心。
 ///
-/// 刷新是**事件驱动**的，没有定时轮询：应用回到前台、切换空间/桌面、系统唤醒、
-/// 解锁回到会话时立即刷一次，另外提供手动刷新。服务端没有推送能力，
-/// 这种「有动静就刷」的模式既能保证切到桌面瞬间是最新的，又不会空闲时持续打接口。
+/// 刷新没有定时轮询：主应用只在打开时拉一次，之后靠手动刷新。
+/// 小组件自己抓数据，由系统调度。
 @MainActor
 @Observable
 public final class QuotaStore {
@@ -74,7 +73,8 @@ public final class QuotaStore {
         let updates = await withTaskGroup(of: (ProviderID, QuotaSnapshot?, QuotaError?).self) { group in
             for provider in providers {
                 group.addTask {
-                    await self.fetchOne(provider)
+                    let (snapshot, error) = await QuotaFetcher.fetch(provider)
+                    return (provider.id, snapshot, error)
                 }
             }
             var collected: [(ProviderID, QuotaSnapshot?, QuotaError?)] = []
@@ -85,28 +85,6 @@ public final class QuotaStore {
         }
 
         apply(updates)
-    }
-
-    private func fetchOne(
-        _ provider: ProviderDescriptor
-    ) async -> (ProviderID, QuotaSnapshot?, QuotaError?) {
-        let id = provider.metadata.id
-        let credential = CredentialStore.loadCredential(for: id)
-        guard credential.isComplete(for: provider.credentialFields) else {
-            let names = provider.credentialFields
-                .filter { !$0.isOptional && credential[$0.id] == nil }
-                .map(\.title)
-                .joined(separator: "、")
-            return (id, nil, .missingCredential(names))
-        }
-        do {
-            let snapshot = try await provider.fetchSnapshot(credential: credential)
-            return (id, snapshot, nil)
-        } catch let error as QuotaError {
-            return (id, nil, error)
-        } catch {
-            return (id, nil, .network(error.localizedDescription))
-        }
     }
 
     private func apply(_ updates: [(ProviderID, QuotaSnapshot?, QuotaError?)]) {

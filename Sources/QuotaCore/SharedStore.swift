@@ -97,6 +97,25 @@ public enum SharedStore {
         decoder.dateDecodingStrategy = .iso8601
         return (try? decoder.decode([WidgetSnapshot].self, from: data)) ?? []
     }
+
+    /// 把新抓到的快照盖到缓存上再写入。只刷新部分来源时用，避免把没抓的供应商冲掉。
+    public static func saveMerging(_ fresh: [WidgetSnapshot]) {
+        guard !fresh.isEmpty else { return }
+        save(mergeSnapshots(cached: loadSnapshots(), fresh: fresh))
+    }
+
+    /// 成功的用新值盖上去，失败的保留缓存。顺序跟 ProviderRegistry 一致。
+    public static func mergeSnapshots(cached: [WidgetSnapshot], fresh: [WidgetSnapshot]) -> [WidgetSnapshot] {
+        guard !fresh.isEmpty else { return cached }
+        var byID = Dictionary(uniqueKeysWithValues: cached.map { ($0.id, $0) })
+        for snapshot in fresh {
+            byID[snapshot.id] = snapshot
+        }
+        let order = ProviderRegistry.all.map(\.id.rawValue)
+        let ordered = order.compactMap { byID[$0] }
+        let extras = byID.values.filter { entry in !order.contains(entry.id) }
+        return ordered + extras
+    }
 }
 
 /// 小组件渲染所需的最小数据集。
@@ -203,10 +222,9 @@ public extension QuotaSnapshot {
             primaryTitle: primary?.title,
             primaryRemainingRatio: primary?.remainingRatio,
             primaryResetsAt: primary?.resetsAt,
-            // 只有纯余额型来源（没有时间窗口）才映射余额；
-            // 千问的「用量包余额」是另一个概念，别塞进账户余额字段。
-            balanceRemaining: windows.isEmpty ? balance?.remaining : nil,
-            balanceUnit: windows.isEmpty ? balance?.unit : nil,
+            // 千问的用量包单位是 Credits，和账户余额不是一回事，不进这个字段。
+            balanceRemaining: balance?.unit == "Credits" ? nil : balance?.remaining,
+            balanceUnit: balance?.unit == "Credits" ? nil : balance?.unit,
             secondaryWindows: windows
                 .filter { $0.id != primary?.id }
                 .map {

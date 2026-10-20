@@ -24,12 +24,18 @@ public enum QuotaFetcher {
     }
 
     /// 抓所有**已配置凭据**的来源，直接产出小组件快照。
+    public static func fetchAllWidgetSnapshots() async -> [WidgetSnapshot] {
+        await fetchWidgetSnapshots(ids: nil)
+    }
+
+    /// 抓小组件快照。`ids` 非空时只抓这些来源（未显示的供应商刷新时应忽略）。
     ///
     /// 只看「容器里有没有凭据」，不看主应用的启用列表——小组件读不到主应用的
     /// UserDefaults，而凭据在用户禁用来源时会被删掉，两者天然一致。
-    public static func fetchAllWidgetSnapshots() async -> [WidgetSnapshot] {
+    public static func fetchWidgetSnapshots(ids: Set<String>?) async -> [WidgetSnapshot] {
         let providers = ProviderRegistry.all.filter {
             CredentialStore.loadCredential(for: $0.id).isComplete(for: $0.credentialFields)
+                && (ids == nil || ids!.contains($0.id.rawValue))
         }
         guard !providers.isEmpty else { return [] }
 

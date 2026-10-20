@@ -130,8 +130,8 @@ struct ProviderSettingsCard: View {
         }
     }
 
-    /// 输入即写入钥匙串。cookie 这类凭据不适合要求用户额外点一次保存，
-    /// 而钥匙串写入本身很快，逐次写不会造成卡顿。
+    /// 输入即写入凭据文件。cookie 这类凭据不适合要求用户额外点一次保存，
+    /// 而写一个小 JSON 文件很快，逐次写不会造成卡顿。
     private func valueBinding(for key: String) -> Binding<String> {
         Binding(
             get: { credential[key] ?? "" },

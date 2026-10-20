@@ -13,7 +13,7 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         consoleURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
         consoleHint:
             "两种获取方式任选其一：\n" +
-            "①「登录获取」——在弹窗里登录一次，之后后台会自动续期，最省心；\n" +
+            "①「登录获取」——在弹窗里登录一次即可，会话过期后再点一次重新获取；\n" +
             "② 手动——控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求，" +
             "复制 Request Headers 里 login_aliyunid_ticket 的值。",
         webLogin: WebLoginSpec(

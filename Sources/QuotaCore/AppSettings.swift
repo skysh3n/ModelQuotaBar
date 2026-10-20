@@ -3,8 +3,7 @@ import Observation
 
 /// 应用设置。凭据不在这里，见 `CredentialStore`。
 ///
-/// 刷新节奏也不在这里配置：额度是**事件驱动**刷新的（切桌面 / 唤醒 / 解锁 /
-/// 回到前台），没有定时轮询。见 `QuotaStore`。
+/// 刷新节奏也不在这里配置：主应用打开时拉一次，之后手动刷新。见 `QuotaStore`。
 @MainActor
 @Observable
 public final class AppSettings {

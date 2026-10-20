@@ -61,6 +61,9 @@ struct ProviderCardView: View {
                             isPrimary: window.id == snapshot.primaryWindow?.id)
                     }
                 }
+                if let balance = snapshot.balance, balance.unit != "Credits" {
+                    accountCredits(balance)
+                }
             }
             footnote(snapshot)
         }
@@ -79,6 +82,18 @@ struct ProviderCardView: View {
         }
     }
 
+    private func accountCredits(_ balance: CreditBalance) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(CurrencySymbol.format(balance.remaining, unit: balance.unit))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+            Text("剩余 Credits")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
     private func balanceHero(_ balance: CreditBalance, isAvailable: Bool?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -86,7 +101,7 @@ struct ProviderCardView: View {
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(isAvailable == false ? Color.orange : Color.primary)
-                Text("账户余额")
+                Text(balance.unit == "USD" ? "剩余 Credits" : "账户余额")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -102,7 +117,7 @@ struct ProviderCardView: View {
     @ViewBuilder
     private func footnote(_ snapshot: QuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            if let balance = snapshot.balance, !snapshot.windows.isEmpty {
+            if let balance = snapshot.balance, balance.unit == "Credits", !snapshot.windows.isEmpty {
                 Text("用量包剩余 \(Format.credits(balance.remaining)) \(balance.unit)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -131,7 +146,7 @@ struct ProviderCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if case .sessionExpired = error {
-                Text("重新登录控制台后，在下方「额度来源」里粘贴新的 Cookie。")
+                Text("在下方「额度来源」里点「登录获取」重新登录，或粘贴新的凭据。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
