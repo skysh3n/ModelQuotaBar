@@ -230,9 +230,7 @@ struct MediumWidgetView: View {
             if snapshots.count == 1, let only = snapshots.first {
                 SourceColumn(snapshot: only, valueSize: 46)
             } else {
-                // 栏间距给得比一般间距宽：左栏的进度条会一直顶到分栏线，
-                // 太窄的话右栏看着像贴着它。三栏时卡片放不下这么宽的间距。
-                // 顶对齐：余额栏比用量栏矮，「账户余额」和更新时间才能贴在一起，不会被拉到栏底。
+                // 栏间距给得比一般间距宽；两栏拉满同一高度，底栏才能对齐。
                 HStack(alignment: .top, spacing: snapshots.count > 2 ? 16 : 32) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
@@ -240,15 +238,13 @@ struct MediumWidgetView: View {
                 }
             }
         }
-        // 先按内容高度收紧，再在整张卡片里垂直居中（小组件里栏内 Spacer 经常不生效）。
-        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
-/// 一个来源一栏。
-/// Cursor：每周剩余 → 进度条 →「$x.xx 剩余」；
-/// DeepSeek 等纯余额：大数字 → 账户余额 → 紧贴更新时间（不再为进度条留空档）。
+/// 一个来源一栏（多栏时拉满高度，底栏与右侧「$x.xx 剩余」对齐）。
+/// Cursor：上半百分比+进度条，底下 Credits；
+/// DeepSeek：上半放大余额，底下「账户余额 + 更新」紧挨的两行小字。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
     /// 百分比主数字字号。单来源 46，多栏 30。
@@ -259,9 +255,9 @@ private struct SourceColumn: View {
         snapshot.primaryRemainingRatio == nil && snapshot.balanceRemaining != nil
     }
 
-    /// 纯余额略大于百分比主数字。
+    /// DeepSeek 余额刻意比右边百分比更大。
     private var balanceHeroSize: CGFloat {
-        valueSize == 46 ? 46 : 32
+        valueSize == 46 ? 48 : 40
     }
 
     var body: some View {
@@ -272,10 +268,10 @@ private struct SourceColumn: View {
                 usageColumn
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// DeepSeek：厂商 → 余额 →（账户余额 + 更新紧挨）。
+    /// 上：厂商 + 大余额；下：账户余额与更新贴在一起，底边对齐右边 Credits。
     private var balanceColumn: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(snapshot.vendor)
@@ -291,7 +287,8 @@ private struct SourceColumn: View {
                     .minimumScaleFactor(0.5)
             }
 
-            // 说明和更新绑在一起，中间不再留进度条那种空档。
+            Spacer(minLength: 0)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
                     .font(.caption2)
@@ -304,7 +301,7 @@ private struct SourceColumn: View {
         }
     }
 
-    /// Cursor 等窗口型：厂商 → 百分比 → 说明 → 进度条 → Credits。
+    /// 上：百分比 + 每周剩余 + 进度条；下：Credits 压底，与左边两行小字底边对齐。
     private var usageColumn: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(snapshot.vendor)
@@ -330,6 +327,8 @@ private struct SourceColumn: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: barHeight)
             }
+
+            Spacer(minLength: 0)
 
             if let credits = widgetCreditsText(snapshot) {
                 Text(credits)
