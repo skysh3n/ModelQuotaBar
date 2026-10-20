@@ -20,13 +20,15 @@ extension QuotaEntry {
             date: Date(),
             allSnapshots: [
                 WidgetSnapshot(
-                    id: "qwen", vendor: "通义千问", planName: "Pro 专业版",
+                    id: "qwen", vendor: "通义千问", title: "通义千问 Token Plan",
+                    planName: "Pro 专业版",
                     primaryTitle: "每月", primaryRemainingRatio: 0.725,
                     primaryResetsAt: Date().addingTimeInterval(12 * 86_400),
                     balanceRemaining: nil, balanceUnit: nil,
                     secondaryWindows: [], remainingDays: 29, updatedAt: Date()),
                 WidgetSnapshot(
-                    id: "deepseek", vendor: "DeepSeek", planName: "API 余额",
+                    id: "deepseek", vendor: "DeepSeek", title: "DeepSeek API 余额",
+                    planName: nil,
                     primaryTitle: nil, primaryRemainingRatio: nil,
                     primaryResetsAt: nil,
                     balanceRemaining: 110.0, balanceUnit: "CNY",
@@ -156,9 +158,7 @@ struct SmallWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(snapshot.vendor)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            WidgetSourceHeader(snapshot: snapshot)
             Spacer(minLength: 0)
             if let ratio = snapshot.primaryRemainingRatio {
                 Text(String(format: "%.1f%%", ratio * 100))
@@ -248,9 +248,34 @@ struct MediumWidgetView: View {
     }
 }
 
+/// 与主界面卡片标题一致：显示名 + 套餐档次徽章（如 Premium）。
+private struct WidgetSourceHeader: View {
+    let snapshot: WidgetSnapshot
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(snapshot.displayTitle)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            if let plan = snapshot.planName, !plan.isEmpty {
+                Text(plan)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.tint.opacity(0.15), in: Capsule())
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 /// 一个来源一栏（多栏时拉满高度，底栏与右侧「$x.xx 剩余」对齐）。
 /// Cursor：上半百分比+进度条，底下 Credits；
-/// DeepSeek：上半放大余额，底下「账户余额 + 更新」紧挨的两行小字。
+/// DeepSeek：中间放大余额，底下「账户余额 + 更新」紧挨的两行小字。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
     /// 百分比主数字字号。单来源 46，多栏 30。
@@ -277,13 +302,12 @@ private struct SourceColumn: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// 上：厂商 + 大余额；下：账户余额与更新贴在一起，底边对齐右边 Credits。
+    /// 标题 → 余额垂直居中在中间带 → 底栏两行小字与右边 Credits 齐平。
     private var balanceColumn: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(snapshot.vendor)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetSourceHeader(snapshot: snapshot)
+
+            Spacer(minLength: 2)
 
             if let balance = snapshot.balanceRemaining {
                 Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
@@ -293,7 +317,7 @@ private struct SourceColumn: View {
                     .minimumScaleFactor(0.5)
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
@@ -307,13 +331,10 @@ private struct SourceColumn: View {
         }
     }
 
-    /// 上：百分比 + 每周剩余 + 进度条；下：Credits 压底，与左边两行小字底边对齐。
+    /// 标题(+徽章) → 百分比 + 每周剩余 + 进度条 → Credits 压底。
     private var usageColumn: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(snapshot.vendor)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            WidgetSourceHeader(snapshot: snapshot)
 
             if let ratio = snapshot.primaryRemainingRatio {
                 Text(String(format: "%.1f%%", ratio * 100))

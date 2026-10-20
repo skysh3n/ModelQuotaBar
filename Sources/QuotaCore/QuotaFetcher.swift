@@ -44,7 +44,10 @@ public enum QuotaFetcher {
                 group.addTask {
                     let (snapshot, _) = await fetch(provider)
                     guard let snapshot else { return nil }
-                    return snapshot.widgetSnapshot(id: provider.id, vendor: provider.metadata.vendor)
+                    return snapshot.widgetSnapshot(
+                        id: provider.id,
+                        vendor: provider.metadata.vendor,
+                        title: provider.metadata.displayName)
                 }
             }
             var results: [WidgetSnapshot] = []

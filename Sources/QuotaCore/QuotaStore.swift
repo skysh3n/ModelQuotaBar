@@ -114,7 +114,8 @@ public final class QuotaStore {
             guard let snapshot = result.snapshot else { return nil }
             return snapshot.widgetSnapshot(
                 id: result.id,
-                vendor: result.metadata.vendor)
+                vendor: result.metadata.vendor,
+                title: result.metadata.displayName)
         }
         // 有启用的源、但这次全都拉取失败：保留上一次写进容器里的数据，
         // 别把小组件洗成「还没取到额度」。只有真正没有任何启用的源时才清空。

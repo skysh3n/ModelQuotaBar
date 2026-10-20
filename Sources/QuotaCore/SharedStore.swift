@@ -126,7 +126,10 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     public var id: String
     /// 厂商名，如「通义千问」。
     public var vendor: String
-    /// 套餐名，如「Pro 专业版」。
+    /// 与主界面卡片标题一致，如「DeepSeek API 余额」「Cursor 订阅用量」。
+    /// 旧快照没有这个字段时，界面退回 `vendor`。
+    public var title: String?
+    /// 套餐档次，如「Premium」「Pro 专业版」。有值时在标题旁显示徽章。
     public var planName: String?
     /// 主窗口标题，如「每月」。纯余额型来源（DeepSeek）为 nil。
     public var primaryTitle: String?
@@ -147,6 +150,7 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     public init(
         id: String,
         vendor: String,
+        title: String? = nil,
         planName: String?,
         primaryTitle: String?,
         primaryRemainingRatio: Double?,
@@ -159,6 +163,7 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     ) {
         self.id = id
         self.vendor = vendor
+        self.title = title
         self.planName = planName
         self.primaryTitle = primaryTitle
         self.primaryRemainingRatio = primaryRemainingRatio
@@ -169,6 +174,9 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
         self.remainingDays = remainingDays
         self.updatedAt = updatedAt
     }
+
+    /// 小组件栏目标题：优先完整显示名，否则厂商名。
+    public var displayTitle: String { title ?? vendor }
 
     /// 是否为纯余额型来源（没有时间窗口，只有钱）。
     public var isBalanceOnly: Bool {
@@ -212,12 +220,14 @@ public extension QuotaSnapshot {
     /// 转成小组件用的精简快照。
     func widgetSnapshot(
         id: ProviderID,
-        vendor: String
+        vendor: String,
+        title: String? = nil
     ) -> WidgetSnapshot {
         let primary = primaryWindow
         return WidgetSnapshot(
             id: id.rawValue,
             vendor: vendor,
+            title: title,
             planName: planName,
             primaryTitle: primary?.title,
             primaryRemainingRatio: primary?.remainingRatio,
