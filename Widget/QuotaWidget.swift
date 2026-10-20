@@ -105,31 +105,32 @@ struct QuotaWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: QuotaEntry
 
-    /// 刷新按钮占位宽度；正文右侧必须留白，否则会盖住最后一栏的套餐徽章。
-    private let refreshClearance: CGFloat = 36
+    /// 刷新按钮（30×30）外再留缝，避免压住最后一栏标题旁的套餐徽章。
+    private let refreshClearance: CGFloat = 40
 
     var body: some View {
-        Group {
-            // 中/大尺寸并列显示所有**勾选**的来源；小尺寸只放得下第一个。
-            if family == .systemMedium || family == .systemLarge {
-                if entry.selectedSnapshots.isEmpty {
-                    EmptyWidgetView()
+        ZStack(alignment: .topTrailing) {
+            Group {
+                // 中/大尺寸并列显示所有**勾选**的来源；小尺寸只放得下第一个。
+                if family == .systemMedium || family == .systemLarge {
+                    if entry.selectedSnapshots.isEmpty {
+                        EmptyWidgetView()
+                    } else {
+                        MediumWidgetView(snapshots: entry.selectedSnapshots)
+                    }
+                } else if let first = entry.selectedSnapshots.first {
+                    SmallWidgetView(snapshot: first)
                 } else {
-                    MediumWidgetView(snapshots: entry.selectedSnapshots)
+                    EmptyWidgetView()
                 }
-            } else if let first = entry.selectedSnapshots.first {
-                SmallWidgetView(snapshot: first)
-            } else {
-                EmptyWidgetView()
             }
-        }
-        .padding(.trailing, refreshClearance)
-        .containerBackground(.fill.tertiary, for: .widget)
-        // 右上角放一个刷新按钮：AppIntent 交互**不占**小组件的每日刷新预算，
-        // 所以这是唯一能做到「我看它的时候点一下就立刻更新」的公开机制。
-        .overlay(alignment: .topTrailing) {
+            .padding(.trailing, refreshClearance)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // AppIntent 交互不占小组件每日刷新预算。
             WidgetRefreshButton(sources: entry.sources)
         }
+        .containerBackground(.fill.tertiary, for: .widget)
     }
 }
 
