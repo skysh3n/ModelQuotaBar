@@ -105,8 +105,8 @@ struct QuotaWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: QuotaEntry
 
-    /// 刷新按钮（30×30）外再留缝，避免压住最后一栏标题旁的套餐徽章。
-    private let refreshClearance: CGFloat = 40
+    /// 刷新按钮（30×30）外再留缝，正文不得画进这块区域。
+    private let refreshClearance: CGFloat = 44
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -254,18 +254,17 @@ struct MediumWidgetView: View {
 }
 
 /// 与主界面卡片标题一致：显示名 + 套餐档次徽章（如 Premium）。
-/// 标题可收缩，徽章优先完整显示，避免被挤没或顶到刷新按钮下。
+/// 徽章放在标题下一行，避免和右上角刷新按钮抢同一行水平空间。
 private struct WidgetSourceHeader: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
-        HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(snapshot.displayTitle)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .layoutPriority(0)
+                .minimumScaleFactor(0.65)
             if let plan = snapshot.planName, !plan.isEmpty {
                 Text(plan)
                     .font(.system(size: 9, weight: .medium))
@@ -274,11 +273,9 @@ private struct WidgetSourceHeader: View {
                     .padding(.vertical, 1)
                     .background(.tint.opacity(0.15), in: Capsule())
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
