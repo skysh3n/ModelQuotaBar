@@ -321,32 +321,32 @@ private struct SourceColumn: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// 标题 → 余额垂直居中在中间带 → 底栏两行小字与右边 Credits 齐平。
+    /// 标题 → 大余额 +「账户余额」紧挨 → 更新时间压底（与右边 Credits 齐平）。
     private var balanceColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             WidgetSourceHeader(snapshot: snapshot)
 
-            Spacer(minLength: 2)
+            Spacer(minLength: 4)
 
-            if let balance = snapshot.balanceRemaining {
-                Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
-                    .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-            }
-
-            Spacer(minLength: 2)
-
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
+                if let balance = snapshot.balanceRemaining {
+                    Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                        .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
                 Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text(widgetTimeText(snapshot.updatedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
             }
+
+            Spacer(minLength: 4)
+
+            Text(widgetTimeText(snapshot.updatedAt))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
     }
 
