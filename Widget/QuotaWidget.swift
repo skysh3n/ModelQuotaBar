@@ -250,9 +250,14 @@ struct MediumWidgetView: View {
 /// 余额型在进度条槽留空，底栏放更新时间，与右边「$x.xx 剩余」齐平。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
-    /// 数字字号。单来源时放大到 46，多栏时 30。
+    /// 数字字号。单来源时放大到 46，多栏时百分比 30、纯余额再大一档。
     var valueSize: CGFloat = 30
     private let barHeight: CGFloat = 5
+
+    /// 纯余额（如 DeepSeek 的 ¥8.47）比百分比主数字再放大一点。
+    private var heroSize: CGFloat {
+        snapshot.primaryRemainingRatio == nil ? valueSize + 8 : valueSize
+    }
 
     private var subtitle: String {
         if let title = snapshot.primaryTitle {
@@ -288,7 +293,7 @@ private struct SourceColumn: View {
             .frame(maxWidth: .infinity)
             .frame(height: barHeight)
 
-            // 底栏：Credits 放大；更新时间同槽对齐。
+            // 底栏：Cursor Credits 放大；DeepSeek 更新时间保持小号。
             Group {
                 if let credits = widgetCreditsText(snapshot) {
                     Text(credits)
@@ -299,8 +304,8 @@ private struct SourceColumn: View {
                         .minimumScaleFactor(0.7)
                 } else {
                     Text(widgetTimeText(snapshot.updatedAt))
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
@@ -321,7 +326,7 @@ private struct SourceColumn: View {
                 .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
         } else if let balance = snapshot.balanceRemaining {
             Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
-                .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                .font(.system(size: heroSize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
