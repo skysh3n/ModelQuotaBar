@@ -232,7 +232,8 @@ struct MediumWidgetView: View {
             } else {
                 // 栏间距给得比一般间距宽：左栏的进度条会一直顶到分栏线，
                 // 太窄的话右栏看着像贴着它。三栏时卡片放不下这么宽的间距。
-                HStack(alignment: .center, spacing: snapshots.count > 2 ? 16 : 32) {
+                // 顶对齐：余额栏比用量栏矮，「账户余额」和更新时间才能贴在一起，不会被拉到栏底。
+                HStack(alignment: .top, spacing: snapshots.count > 2 ? 16 : 32) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
                     }
