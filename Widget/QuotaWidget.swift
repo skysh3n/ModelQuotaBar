@@ -245,91 +245,101 @@ struct MediumWidgetView: View {
     }
 }
 
-/// 一个来源一栏：厂商名 → 大数字 → 说明 → 进度条槽 → 底栏。
-/// Cursor（相对截图对调后）：每周剩余 → 进度条 →「$x.xx 剩余」；
-/// 余额型在进度条槽留空，底栏放更新时间，与右边「$x.xx 剩余」齐平。
+/// 一个来源一栏。
+/// Cursor：每周剩余 → 进度条 →「$x.xx 剩余」；
+/// DeepSeek 等纯余额：大数字 → 账户余额 → 紧贴更新时间（不再为进度条留空档）。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
-    /// 数字字号。单来源时放大到 46，多栏时百分比 30、纯余额再大一档。
+    /// 百分比主数字字号。单来源 46，多栏 30。
     var valueSize: CGFloat = 30
     private let barHeight: CGFloat = 5
 
-    /// 纯余额（如 DeepSeek 的 ¥8.47）比百分比主数字再放大一点。
-    private var heroSize: CGFloat {
-        snapshot.primaryRemainingRatio == nil ? valueSize + 8 : valueSize
+    private var isBalanceOnly: Bool {
+        snapshot.primaryRemainingRatio == nil && snapshot.balanceRemaining != nil
     }
 
-    private var subtitle: String {
-        if let title = snapshot.primaryTitle {
-            "\(title)剩余"
-        } else if snapshot.balanceUnit == "USD" {
-            "剩余 Credits"
-        } else {
-            "账户余额"
-        }
+    /// 纯余额略大于百分比，但不要大到把整栏撑得发空。
+    private var balanceHeroSize: CGFloat {
+        valueSize == 46 ? 46 : 34
     }
 
     var body: some View {
+        Group {
+            if isBalanceOnly {
+                balanceColumn
+            } else {
+                usageColumn
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// DeepSeek：厂商 → 余额 → 账户余额 → 更新，行距收紧。
+    private var balanceColumn: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(snapshot.vendor)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            if let balance = snapshot.balanceRemaining {
+                Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                    .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    // 大数字视觉偏重，略上移一点，整栏更稳。
+                    .padding(.top, 1)
+                    .padding(.bottom, -1)
+            }
+
+            Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(widgetTimeText(snapshot.updatedAt))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .padding(.top, 1)
+        }
+    }
+
+    /// Cursor 等窗口型：厂商 → 百分比 → 说明 → 进度条 → Credits。
+    private var usageColumn: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(snapshot.vendor)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            valueText
+            if let ratio = snapshot.primaryRemainingRatio {
+                Text(String(format: "%.1f%%", ratio * 100))
+                    .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
+            }
 
-            Text(subtitle)
+            Text(snapshot.primaryTitle.map { "\($0)剩余" } ?? "套餐剩余")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            // 进度条槽：有周剩余就画条，否则留同样高度，两栏「账户余额 / 每周剩余」齐平。
-            Group {
-                if let ratio = snapshot.primaryRemainingRatio {
-                    WidgetProgressBar(remainingRatio: ratio, height: barHeight)
-                } else {
-                    Color.clear.frame(maxWidth: .infinity).frame(height: barHeight)
-                }
+            if let ratio = snapshot.primaryRemainingRatio {
+                WidgetProgressBar(remainingRatio: ratio, height: barHeight)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: barHeight)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: barHeight)
 
-            // 底栏：Cursor Credits 放大；DeepSeek 更新时间保持小号。
-            Group {
-                if let credits = widgetCreditsText(snapshot) {
-                    Text(credits)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                } else {
-                    Text(widgetTimeText(snapshot.updatedAt))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+            if let credits = widgetCreditsText(snapshot) {
+                Text(credits)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 24, alignment: .center)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var valueText: some View {
-        if let ratio = snapshot.primaryRemainingRatio {
-            Text(String(format: "%.1f%%", ratio * 100))
-                .font(.system(size: valueSize, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
-                .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
-        } else if let balance = snapshot.balanceRemaining {
-            Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
-                .font(.system(size: heroSize, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
         }
     }
 }
