@@ -8,18 +8,16 @@
 
 ## 界面预览
 
-桌面小组件的小、中两种形态（截图为示例数据；小尺寸显示单个来源，中尺寸并排显示多个；标题旁可显示套餐档次如 Premium）：
+桌面小组件中尺寸（截图为实拍；小尺寸显示单个来源，中尺寸并排多个；标题旁可显示套餐档次如 Premium）：
 
 <p align="center">
-  <img src="docs/images/widget-small-qwen.png" width="150" alt="小尺寸桌面小组件：通义千问的每月剩余额度">
-  <img src="docs/images/widget-small-deepseek.png" width="150" alt="小尺寸桌面小组件：DeepSeek 账户余额">
-  <img src="docs/images/widget-medium.png" width="320" alt="中尺寸桌面小组件：并排显示多个额度来源">
+  <img src="docs/images/widget-medium.png" width="360" alt="中尺寸桌面小组件：DeepSeek 账户余额与 Cursor 每周剩余">
 </p>
 
-主应用里的额度明细：
+主应用里的额度概览：
 
 <p align="center">
-  <img src="docs/images/app-card.png" width="400" alt="主应用的额度明细卡片">
+  <img src="docs/images/app-card.png" width="420" alt="主应用额度概览：DeepSeek 余额与 Cursor Premium 每周剩余">
 </p>
 
 ## 功能
