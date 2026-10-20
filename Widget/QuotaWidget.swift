@@ -105,6 +105,9 @@ struct QuotaWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: QuotaEntry
 
+    /// 刷新按钮占位宽度；正文右侧必须留白，否则会盖住最后一栏的套餐徽章。
+    private let refreshClearance: CGFloat = 36
+
     var body: some View {
         Group {
             // 中/大尺寸并列显示所有**勾选**的来源；小尺寸只放得下第一个。
@@ -120,6 +123,7 @@ struct QuotaWidgetEntryView: View {
                 EmptyWidgetView()
             }
         }
+        .padding(.trailing, refreshClearance)
         .containerBackground(.fill.tertiary, for: .widget)
         // 右上角放一个刷新按钮：AppIntent 交互**不占**小组件的每日刷新预算，
         // 所以这是唯一能做到「我看它的时候点一下就立刻更新」的公开机制。
@@ -249,6 +253,7 @@ struct MediumWidgetView: View {
 }
 
 /// 与主界面卡片标题一致：显示名 + 套餐档次徽章（如 Premium）。
+/// 标题可收缩，徽章优先完整显示，避免被挤没或顶到刷新按钮下。
 private struct WidgetSourceHeader: View {
     let snapshot: WidgetSnapshot
 
@@ -258,7 +263,8 @@ private struct WidgetSourceHeader: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.6)
+                .layoutPriority(0)
             if let plan = snapshot.planName, !plan.isEmpty {
                 Text(plan)
                     .font(.system(size: 9, weight: .medium))
@@ -267,6 +273,8 @@ private struct WidgetSourceHeader: View {
                     .padding(.vertical, 1)
                     .background(.tint.opacity(0.15), in: Capsule())
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
             }
             Spacer(minLength: 0)
         }
