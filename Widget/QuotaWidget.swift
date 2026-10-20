@@ -259,9 +259,9 @@ private struct SourceColumn: View {
         snapshot.primaryRemainingRatio == nil && snapshot.balanceRemaining != nil
     }
 
-    /// 纯余额略大于百分比，但不要大到把整栏撑得发空。
+    /// 纯余额略大于百分比主数字。
     private var balanceHeroSize: CGFloat {
-        valueSize == 46 ? 46 : 34
+        valueSize == 46 ? 46 : 32
     }
 
     var body: some View {
@@ -275,9 +275,9 @@ private struct SourceColumn: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// DeepSeek：厂商 → 余额 → 账户余额 → 更新，行距收紧。
+    /// DeepSeek：厂商 → 余额 →（账户余额 + 更新紧挨）。
     private var balanceColumn: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(snapshot.vendor)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -289,20 +289,18 @@ private struct SourceColumn: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                    // 大数字视觉偏重，略上移一点，整栏更稳。
-                    .padding(.top, 1)
-                    .padding(.bottom, -1)
             }
 
-            Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            Text(widgetTimeText(snapshot.updatedAt))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .padding(.top, 1)
+            // 说明和更新绑在一起，中间不再留进度条那种空档。
+            VStack(alignment: .leading, spacing: 2) {
+                Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(widgetTimeText(snapshot.updatedAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
         }
     }
 
