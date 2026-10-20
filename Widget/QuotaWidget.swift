@@ -226,19 +226,25 @@ struct MediumWidgetView: View {
     let snapshots: [WidgetSnapshot]
 
     var body: some View {
-        Group {
-            if snapshots.count == 1, let only = snapshots.first {
-                SourceColumn(snapshot: only, valueSize: 46)
-            } else {
-                // 栏间距给得比一般间距宽；两栏拉满同一高度，底栏才能对齐。
-                HStack(alignment: .top, spacing: snapshots.count > 2 ? 16 : 32) {
+        if snapshots.count == 1, let only = snapshots.first {
+            SourceColumn(snapshot: only, valueSize: 46)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            // GeometryReader 给出明确高度后，栏内 Spacer 才能把底栏压到底并对齐。
+            GeometryReader { geo in
+                let spacing: CGFloat = snapshots.count > 2 ? 16 : 32
+                let columnWidth = max(
+                    0,
+                    (geo.size.width - spacing * CGFloat(snapshots.count - 1))
+                        / CGFloat(snapshots.count))
+                HStack(alignment: .top, spacing: spacing) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
+                            .frame(width: columnWidth, height: geo.size.height, alignment: .topLeading)
                     }
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
