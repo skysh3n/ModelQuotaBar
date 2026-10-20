@@ -253,18 +253,26 @@ struct MediumWidgetView: View {
     }
 }
 
-/// 与主界面卡片标题一致：显示名 + 套餐档次徽章（如 Premium）。
-/// 徽章放在标题下一行，避免和右上角刷新按钮抢同一行水平空间。
+/// 栏目标题。有套餐档次时显示「厂商 + 徽章」（如 Cursor Premium），
+/// 避免再拼「订阅用量」把右上角刷新按钮挤叠；没有档次时用完整显示名。
 private struct WidgetSourceHeader: View {
     let snapshot: WidgetSnapshot
 
+    private var titleText: String {
+        if let plan = snapshot.planName, !plan.isEmpty {
+            snapshot.vendor
+        } else {
+            snapshot.displayTitle
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(snapshot.displayTitle)
+        HStack(spacing: 4) {
+            Text(titleText)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.7)
             if let plan = snapshot.planName, !plan.isEmpty {
                 Text(plan)
                     .font(.system(size: 9, weight: .medium))
@@ -273,9 +281,10 @@ private struct WidgetSourceHeader: View {
                     .padding(.vertical, 1)
                     .background(.tint.opacity(0.15), in: Capsule())
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
