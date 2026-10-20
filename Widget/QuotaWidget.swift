@@ -101,12 +101,12 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
     }
 }
 
+/// 右上角刷新按钮占用的宽度；分栏宽度计算必须扣掉，不能只靠外层 padding。
+private let widgetRefreshClearance: CGFloat = 44
+
 struct QuotaWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: QuotaEntry
-
-    /// 刷新按钮（30×30）外再留缝，正文不得画进这块区域。
-    private let refreshClearance: CGFloat = 44
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -120,11 +120,11 @@ struct QuotaWidgetEntryView: View {
                     }
                 } else if let first = entry.selectedSnapshots.first {
                     SmallWidgetView(snapshot: first)
+                        .padding(.trailing, widgetRefreshClearance)
                 } else {
                     EmptyWidgetView()
                 }
             }
-            .padding(.trailing, refreshClearance)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // AppIntent 交互不占小组件每日刷新预算。
@@ -233,20 +233,24 @@ struct MediumWidgetView: View {
     var body: some View {
         if snapshots.count == 1, let only = snapshots.first {
             SourceColumn(snapshot: only, valueSize: 46)
+                .padding(.trailing, widgetRefreshClearance)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             // GeometryReader 给出明确高度后，栏内 Spacer 才能把底栏压到底并对齐。
+            // 可用宽度要扣掉刷新按钮占位，否则最后一栏标题/徽章会画进按钮下面。
             GeometryReader { geo in
                 let spacing: CGFloat = snapshots.count > 2 ? 16 : 32
+                let usableWidth = max(0, geo.size.width - widgetRefreshClearance)
                 let columnWidth = max(
                     0,
-                    (geo.size.width - spacing * CGFloat(snapshots.count - 1))
+                    (usableWidth - spacing * CGFloat(snapshots.count - 1))
                         / CGFloat(snapshots.count))
                 HStack(alignment: .top, spacing: spacing) {
                     ForEach(snapshots) { snapshot in
                         SourceColumn(snapshot: snapshot)
                             .frame(width: columnWidth, height: geo.size.height, alignment: .topLeading)
                     }
+                    Spacer(minLength: widgetRefreshClearance)
                 }
             }
         }
