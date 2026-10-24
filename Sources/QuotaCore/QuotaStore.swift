@@ -33,6 +33,8 @@ public final class QuotaStore {
 
     private let settings: AppSettings
     private var lastPublished: [WidgetSnapshot] = []
+    /// 重叠刷新时只采纳最新一轮，避免旧结果盖掉新凭据后的数据。
+    private var refreshGeneration = 0
 
     public init(settings: AppSettings) {
         self.settings = settings
@@ -61,12 +63,20 @@ public final class QuotaStore {
     /// 拉取所有已启用的来源。事件触发和手动刷新都走这里。
     public func refreshAll() async {
         syncWithSettings()
-        guard !results.isEmpty else { return }
+        // 全部关掉时也要走到 publish，才能清空小组件缓存。
+        guard !results.isEmpty else {
+            publishToWidget()
+            return
+        }
 
+        refreshGeneration += 1
+        let generation = refreshGeneration
         isRefreshing = true
         defer {
-            isRefreshing = false
-            lastRefreshAt = Date()
+            if generation == refreshGeneration {
+                isRefreshing = false
+                lastRefreshAt = Date()
+            }
         }
 
         let providers = settings.activeProviders
@@ -84,6 +94,7 @@ public final class QuotaStore {
             return collected
         }
 
+        guard generation == refreshGeneration else { return }
         apply(updates)
     }
 
@@ -119,12 +130,22 @@ public final class QuotaStore {
         }
         // 有启用的源、但这次全都拉取失败：保留上一次写进容器里的数据，
         // 别把小组件洗成「还没取到额度」。只有真正没有任何启用的源时才清空。
-        if snapshots.isEmpty && !settings.activeProviders.isEmpty {
+        if snapshots.isEmpty {
+            guard settings.activeProviders.isEmpty else { return }
+            guard lastPublished != [] else { return }
+            lastPublished = []
+            SharedStore.save([])
+            onWidgetDataChanged?()
             return
         }
-        guard snapshots != lastPublished else { return }
-        lastPublished = snapshots
-        SharedStore.save(snapshots)
+        // 与小组件侧一致：合并写入，冷启动部分成功时不要冲掉其他来源的缓存。
+        let activeIDs = Set(settings.activeProviders.map(\.id.rawValue))
+        let merged = SharedStore.mergeSnapshots(
+            cached: SharedStore.loadSnapshots().filter { activeIDs.contains($0.id) },
+            fresh: snapshots)
+        guard merged != lastPublished else { return }
+        lastPublished = merged
+        SharedStore.save(merged)
         onWidgetDataChanged?()
     }
 }

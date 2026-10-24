@@ -30,11 +30,6 @@ final class AppEnvironment {
         await store.refreshAll()
     }
 
-    /// 登录窗口拿到凭据后调用。
-    func didCaptureLogin() {
-        Task { await refresh() }
-    }
-
     /// 启用列表变化后，对齐结果并立即刷一次。
     func providersDidChange() {
         store.syncWithSettings()

@@ -6,9 +6,10 @@ public enum QuotaFetcher {
     /// 用共享容器里的凭据抓一个来源。
     public static func fetch(_ provider: ProviderDescriptor) async -> (QuotaSnapshot?, QuotaError?) {
         let credential = CredentialStore.loadCredential(for: provider.id)
+            .resolvingDefaults(for: provider.credentialFields)
         guard credential.isComplete(for: provider.credentialFields) else {
             let names = provider.credentialFields
-                .filter { !$0.isOptional && credential[$0.id] == nil }
+                .filter { !$0.isOptional && credential[$0.id] == nil && $0.defaultValue == nil }
                 .map(\.title)
                 .joined(separator: "、")
             return (nil, .missingCredential(names))

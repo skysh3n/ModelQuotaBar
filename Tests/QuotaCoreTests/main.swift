@@ -5,6 +5,7 @@ exit(TestRunner.run([
     QwenTokenPlanParsingTests.suite,
     ConsoleGatewayTests.suite,
     JSONSearchTests.suite,
+    CredentialFieldTests.suite,
     QuotaWindowTests.suite,
     SharedStoreTests.suite,
     DeepSeekTests.suite,

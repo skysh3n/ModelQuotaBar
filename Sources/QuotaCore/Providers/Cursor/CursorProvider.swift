@@ -72,9 +72,11 @@ public enum CursorProvider: QuotaProvider {
         } catch QuotaError.decoding {
             guard let userID = userID(fromCookie: cookie) else { throw QuotaError.decoding("响应里没有套餐用量数据") }
             let legacy = try await get(path: "/api/usage?user=\(userID)", cookie: cookie)
-            return try makeLegacySnapshot(
+            let snapshot = try makeLegacySnapshot(
                 usagePayload: legacy,
                 planName: membershipType(in: summary).map(displayName(forMembership:)))
+            // 旧接口也走缓存，避免周期接口短暂失败后丢掉仍有效的每周窗口。
+            return WeeklyCache.apply(to: snapshot)
         }
     }
 
@@ -207,13 +209,15 @@ public enum CursorProvider: QuotaProvider {
 
     /// 归一化用户粘贴的凭据：只粘了值时补上键名；值里的 `::` 是解码后的形式，
     /// 服务端只认 URL 编码后的 `%3A%3A`。
+    ///
+    /// 已带键名的完整 Cookie 头也要编码：浏览器 / 开发者工具有时给出解码后的 `::`。
     static func normalizedCookie(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "::", with: "%3A%3A")
         if trimmed.contains("\(sessionCookieName)=") {
             return trimmed
         }
-        let value = trimmed.replacingOccurrences(of: "::", with: "%3A%3A")
-        return "\(sessionCookieName)=\(value)"
+        return "\(sessionCookieName)=\(trimmed)"
     }
 
     /// 从 Cookie 里取出 `user_…::` 后面的 JWT。
@@ -258,13 +262,14 @@ public enum CursorProvider: QuotaProvider {
         }
         let period = periodPayload as? [String: Any]
         let planUsage = period?["planUsage"] as? [String: Any]
-        let weeklyPlan = Self.weeklyPlan(planInfoPayload)
+        let membership = membershipType(in: summaryPayload)
+        // get-plan-info 偶发失败时，Premium 等仍按周额度处理，避免退回月度 summary 的空壳 0%。
+        let weeklyPlan = Self.weeklyPlan(planInfoPayload, membershipType: membership)
         let cycleStart = date(period?["billingCycleStart"]) ?? date(root["billingCycleStart"])
-        var resetsAt = weeklyPlan.resetsAt
+        let resetsAt = weeklyPlan.resetsAt
             ?? date(period?["billingCycleEnd"])
             ?? date(root["billingCycleEnd"])
         let individual = root["individualUsage"] as? [String: Any]
-        let team = root["teamUsage"] as? [String: Any]
 
         var windows: [QuotaWindow] = []
 
@@ -412,6 +417,7 @@ public enum CursorProvider: QuotaProvider {
         case "free_trial": "Pro 试用"
         case "pro": "Pro"
         case "pro_plus", "pro-plus", "proplus": "Pro+"
+        case "premium": "Premium"
         case "ultra": "Ultra"
         case "business", "team": "Business"
         case "enterprise": "Enterprise"
@@ -419,19 +425,40 @@ public enum CursorProvider: QuotaProvider {
         }
     }
 
-    /// Premium 这类套餐的包含额度按周计算。周期和重置时间在 get-plan-info 里。
-    static func weeklyPlan(_ payload: Any?) -> (weekly: Bool, resetsAt: Date?) {
-        guard let root = payload as? [String: Any] else { return (false, nil) }
-        let info = (root["planInfo"] as? [String: Any]) ?? root
-        let weekly: Bool
-        if let number = JSONSearch.number(info["includedUsagePeriod"]) {
-            weekly = number == 2
-        } else if let name = JSONSearch.string(info["includedUsagePeriod"])?.uppercased() {
-            weekly = name.contains("WEEKLY")
-        } else {
-            weekly = false
+    /// 这些档次的包含额度按周重置；`get-plan-info` 失败时也按周处理。
+    static func isWeeklyMembership(_ type: String?) -> Bool {
+        guard let type else { return false }
+        switch type.lowercased() {
+        case "premium": return true
+        default: return false
         }
-        return (weekly, date(info["includedUsageResetsAt"]))
+    }
+
+    /// Premium 这类套餐的包含额度按周计算。周期和重置时间在 get-plan-info 里。
+    ///
+    /// `membershipType` 用于 plan-info 缺失时的兜底：否则会把 usage-summary 常年停在 0 的空壳
+    /// 当成「每月剩 100%」画出来。
+    static func weeklyPlan(_ payload: Any?, membershipType: String? = nil) -> (weekly: Bool, resetsAt: Date?) {
+        let info: [String: Any]? = {
+            guard let root = payload as? [String: Any] else { return nil }
+            return (root["planInfo"] as? [String: Any]) ?? root
+        }()
+        let resetsAt = info.flatMap { date($0["includedUsageResetsAt"]) }
+        if let info {
+            let weekly: Bool
+            if let number = JSONSearch.number(info["includedUsagePeriod"]) {
+                weekly = number == 2
+            } else if let name = JSONSearch.string(info["includedUsagePeriod"])?.uppercased() {
+                weekly = name.contains("WEEKLY")
+            } else {
+                weekly = false
+            }
+            if weekly { return (true, resetsAt) }
+        }
+        if isWeeklyMembership(membershipType) {
+            return (true, resetsAt)
+        }
+        return (false, resetsAt)
     }
 
     /// 从 “You've used 3% of …” 里取出已用比例。
@@ -489,6 +516,14 @@ extension CursorProvider {
         static func apply(to snapshot: QuotaSnapshot, now: Date = Date(), url: URL? = defaultURL) -> QuotaSnapshot {
             guard let url else { return snapshot }
             if let window = snapshot.windows.first(where: { $0.id == "weekly" || $0.id == "monthly" }) {
+                // 空壳「每月已用 0%」不要盖掉仍有效的每周缓存（周期接口抖的时候容易冒出来）。
+                if window.id == "monthly", window.usedRatio == 0,
+                   let entry = load(from: url), entry.id == "weekly", isValid(entry, now: now)
+                {
+                    var cleaned = snapshot
+                    cleaned.windows.removeAll { $0.id == "monthly" && $0.usedRatio == 0 }
+                    return withCachedWindow(entry, on: cleaned)
+                }
                 save(Entry(
                     id: window.id,
                     title: window.title,
@@ -500,6 +535,10 @@ extension CursorProvider {
                 return snapshot
             }
             guard let entry = load(from: url), isValid(entry, now: now) else { return snapshot }
+            return withCachedWindow(entry, on: snapshot)
+        }
+
+        private static func withCachedWindow(_ entry: Entry, on snapshot: QuotaSnapshot) -> QuotaSnapshot {
             var result = snapshot
             result.windows.insert(QuotaWindow(
                 id: entry.id,

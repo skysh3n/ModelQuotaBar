@@ -14,6 +14,8 @@ enum CursorTests {
         ("没有百分比时按 used / limit 计算", testFallsBackToUsedOverLimit),
         ("没有 planUsage 时从展示文案取每周已用比例", testPercentFromDisplayMessage),
         ("Premium 的每周额度不采用 usage-summary 的 0", testWeeklyPlanIgnoresEmptySummary),
+        ("Premium 无 plan-info 时也不把 summary 空壳画成每月 100%", testPremiumWithoutPlanInfoIgnoresEmptySummary),
+        ("空壳每月 0% 不覆盖有效的每周缓存", testWeeklyCacheKeepsWeeklyOverEmptyMonthly),
         ("按量付费不单独占一行", testOnDemandIsNotShown),
         ("取不到套餐数据时报 decoding", testMissingPlanThrowsDecoding),
         ("套餐被禁用时报 decoding", testDisabledPlanThrowsDecoding),
@@ -23,7 +25,8 @@ enum CursorTests {
         ("计费周期时间兼容多种格式", testDateFormats),
         ("只粘值时补上 Cookie 名", testNormalizesBareValue),
         ("解码后的 :: 会转回 %3A%3A", testNormalizesDecodedSeparator),
-        ("整段 Cookie 原样保留", testKeepsFullCookieHeader),
+        ("整段 Cookie 里已编码的值保持不变", testKeepsFullCookieHeader),
+        ("整段 Cookie 里解码后的 :: 也会编码", testEncodesDecodedSeparatorInFullHeader),
         ("从 Cookie 里取用户 ID", testExtractsUserID),
         ("从 Cookie 里取 Bearer token", testExtractsAccessToken),
         ("周期接口没给百分比时沿用上次的每周用量，过了重置时间作废", testWeeklyCacheFillsMissingWindow),
@@ -259,9 +262,31 @@ enum CursorTests {
         try Expect.equal(CursorProvider.displayName(forMembership: "free_trial"), "Pro 试用")
         try Expect.equal(CursorProvider.displayName(forMembership: "PRO"), "Pro")
         try Expect.equal(CursorProvider.displayName(forMembership: "pro_plus"), "Pro+")
+        try Expect.equal(CursorProvider.displayName(forMembership: "premium"), "Premium")
         try Expect.equal(CursorProvider.displayName(forMembership: "ultra"), "Ultra")
         try Expect.equal(CursorProvider.displayName(forMembership: "enterprise"), "Enterprise")
         try Expect.equal(CursorProvider.displayName(forMembership: "some_new_tier"), "Some New Tier")
+        try Expect.isTrue(CursorProvider.isWeeklyMembership("premium"))
+        try Expect.isTrue(CursorProvider.isWeeklyMembership("Premium"))
+        try Expect.isTrue(!CursorProvider.isWeeklyMembership("pro"))
+    }
+
+    static func testPremiumWithoutPlanInfoIgnoresEmptySummary() throws {
+        // 复现：周期接口与 get-plan-info 都失败时，旧逻辑会把 usage-summary 的 0
+        // 画成「每月剩 100%」，小组件就只剩一条进度条、没有 Credits。
+        let summary = try jsonObject("""
+        { "membershipType": "premium",
+          "billingCycleStart": "2026-10-01T00:00:00.000Z",
+          "billingCycleEnd": "2026-11-01T00:00:00.000Z",
+          "individualUsage": { "plan": { "enabled": true, "used": 0, "limit": 4615, "totalPercentUsed": 0 } } }
+        """)
+        let grants = try jsonObject(#"{"grants":[{"remainingCents":0}]}"#)
+        let snapshot = try CursorProvider.makeSnapshot(
+            summaryPayload: summary,
+            grantsPayload: grants)
+        try Expect.equal(snapshot.windows.count, 0)
+        try Expect.equal(snapshot.planName, "Premium")
+        try Expect.equal(try Expect.notNil(snapshot.balance).remaining, 0, accuracy: 1e-9)
     }
 
     static func testDateFormats() throws {
@@ -289,6 +314,13 @@ enum CursorTests {
     static func testKeepsFullCookieHeader() throws {
         let header = "foo=bar; WorkosCursorSessionToken=user_01ABC%3A%3AeyJ.x.y; other=1"
         try Expect.equal(CursorProvider.normalizedCookie(header), header)
+    }
+
+    static func testEncodesDecodedSeparatorInFullHeader() throws {
+        try Expect.equal(
+            CursorProvider.normalizedCookie(
+                "foo=bar; WorkosCursorSessionToken=user_01ABC::eyJ.x.y; other=1"),
+            "foo=bar; WorkosCursorSessionToken=user_01ABC%3A%3AeyJ.x.y; other=1")
     }
 
     static func testExtractsUserID() throws {
@@ -366,6 +398,31 @@ enum CursorTests {
 
         let expired = CursorProvider.WeeklyCache.apply(to: empty, now: resetsAt.addingTimeInterval(1), url: url)
         try Expect.equal(expired.windows.count, 0)
+    }
+
+    static func testWeeklyCacheKeepsWeeklyOverEmptyMonthly() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cursor-cache-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = isoDate("2026-10-19T08:00:00Z")
+        let resetsAt = isoDate("2026-10-24T08:00:00Z")
+        let weekly = QuotaSnapshot(
+            planName: "Premium",
+            windows: [QuotaWindow(id: "weekly", title: "每周", usedRatio: 0.15, resetsAt: resetsAt, unit: "USD")],
+            balance: CreditBalance(remaining: 0, unit: "USD"),
+            updatedAt: now)
+        _ = CursorProvider.WeeklyCache.apply(to: weekly, now: now, url: url)
+
+        let emptyMonthly = QuotaSnapshot(
+            planName: "Premium",
+            windows: [QuotaWindow(id: "monthly", title: "每月", usedRatio: 0, resetsAt: nil, unit: "USD")],
+            balance: CreditBalance(remaining: 0, unit: "USD"),
+            updatedAt: now)
+        let kept = CursorProvider.WeeklyCache.apply(to: emptyMonthly, now: now.addingTimeInterval(60), url: url)
+        let window = try Expect.notNil(kept.windows.first)
+        try Expect.equal(window.id, "weekly")
+        try Expect.equal(window.usedRatio, 0.15, accuracy: 1e-9)
+        try Expect.equal(window.title, "每周")
     }
 
     static func testRegisteredAndSelectable() throws {
