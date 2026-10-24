@@ -16,6 +16,8 @@ enum CursorTests {
         ("Premium 的每周额度不采用 usage-summary 的 0", testWeeklyPlanIgnoresEmptySummary),
         ("Premium 无 plan-info 时也不把 summary 空壳画成每月 100%", testPremiumWithoutPlanInfoIgnoresEmptySummary),
         ("空壳每月 0% 不覆盖有效的每周缓存", testWeeklyCacheKeepsWeeklyOverEmptyMonthly),
+        ("空 grants 对象视为 Credits 0 而不是没取到", testEmptyGrantsObjectMeansZeroCredits),
+        ("Credits 接口失败时沿用上次余额", testCreditsCacheFillsMissingBalance),
         ("按量付费不单独占一行", testOnDemandIsNotShown),
         ("取不到套餐数据时报 decoding", testMissingPlanThrowsDecoding),
         ("套餐被禁用时报 decoding", testDisabledPlanThrowsDecoding),
@@ -144,6 +146,62 @@ enum CursorTests {
             stripePayload: try jsonObject(#"{"customerBalance": 300}"#))
         try Expect.equal(try Expect.notNil(debt).remaining, 0, accuracy: 1e-9)
         try Expect.isNil(CursorProvider.accountCredits(grantsPayload: nil, stripePayload: nil))
+    }
+
+    static func testEmptyGrantsObjectMeansZeroCredits() throws {
+        // 线上常见：get-client-visible-credit-grants / RPC 成功但 body 是 `{}`。
+        let onlyEmptyObject = CursorProvider.accountCredits(
+            grantsPayload: try jsonObject("{}"),
+            stripePayload: nil)
+        try Expect.equal(try Expect.notNil(onlyEmptyObject).remaining, 0, accuracy: 1e-9)
+
+        let summary = try jsonObject("""
+        { "membershipType": "premium",
+          "individualUsage": { "plan": { "enabled": true, "used": 0, "limit": 4615 } } }
+        """)
+        let period = try jsonObject("""
+        { "planUsage": { "totalPercentUsed": 12.6 },
+          "displayMessage": "You've used 13% of your included usage" }
+        """)
+        let snapshot = try CursorProvider.makeSnapshot(
+            summaryPayload: summary,
+            periodPayload: period,
+            grantsPayload: try jsonObject("{}"),
+            stripePayload: try jsonObject(#"{"customerBalance": 0}"#))
+        try Expect.equal(try Expect.notNil(snapshot.balance).remaining, 0, accuracy: 1e-9)
+        let widget = snapshot.widgetSnapshot(id: CursorProvider.metadata.id, vendor: "Cursor")
+        try Expect.equal(try Expect.notNil(widget.balanceRemaining), 0, accuracy: 1e-9)
+        try Expect.equal(widget.balanceUnit, "USD")
+    }
+
+    static func testCreditsCacheFillsMissingBalance() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cursor-credits-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = isoDate("2026-10-24T08:00:00Z")
+        let withBalance = QuotaSnapshot(
+            planName: "Premium",
+            windows: [QuotaWindow(id: "weekly", title: "每周", usedRatio: 0.13, unit: "USD")],
+            balance: CreditBalance(remaining: 12.5, unit: "USD"),
+            updatedAt: now)
+        _ = CursorProvider.CreditsCache.apply(to: withBalance, now: now, url: url)
+
+        // 复现：周百分比在，grants/stripe 都失败 → balance nil → 以前 Credits 整行消失。
+        let missing = QuotaSnapshot(
+            planName: "Premium",
+            windows: [QuotaWindow(id: "weekly", title: "每周", usedRatio: 0.13, unit: "USD")],
+            balance: nil,
+            updatedAt: now)
+        let filled = CursorProvider.CreditsCache.apply(
+            to: missing, now: now.addingTimeInterval(60), url: url)
+        try Expect.equal(try Expect.notNil(filled.balance).remaining, 12.5, accuracy: 1e-9)
+        try Expect.equal(try Expect.notNil(filled.balance).unit, "USD")
+        // 百分比窗口原样保留。
+        try Expect.equal(try Expect.notNil(filled.windows.first).usedRatio, 0.13, accuracy: 1e-9)
+
+        let expired = CursorProvider.CreditsCache.apply(
+            to: missing, now: now.addingTimeInterval(8 * 86_400), url: url)
+        try Expect.isNil(expired.balance)
     }
 
     static func testFallsBackToUsedOverLimit() throws {

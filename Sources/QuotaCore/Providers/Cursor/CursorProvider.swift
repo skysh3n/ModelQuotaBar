@@ -58,7 +58,8 @@ public enum CursorProvider: QuotaProvider {
         async let periodTask = currentPeriodUsage(cookie: cookie, token: token)
         async let planInfoTask = planInfo(cookie: cookie, token: token)
         // Account balance 的「Credits available」：赠送额度加上 Stripe 预存（负数才是余额）。
-        async let grantsTask = try? post(path: "/api/dashboard/get-client-visible-credit-grants", cookie: cookie)
+        // grants 的网页接口偶发只回 `{}`，与编辑器 RPC 并行，谁先给出 grants 列表用谁。
+        async let grantsTask = creditGrantsPayload(cookie: cookie, token: token)
         async let stripeTask = try? get(path: "/api/auth/stripe", cookie: cookie)
         let (period, planInfo, grants, stripe) = await (periodTask, planInfoTask, grantsTask, stripeTask)
         do {
@@ -68,15 +69,15 @@ public enum CursorProvider: QuotaProvider {
                 grantsPayload: grants,
                 stripePayload: stripe,
                 planInfoPayload: planInfo)
-            return WeeklyCache.apply(to: snapshot)
+            return CreditsCache.apply(to: WeeklyCache.apply(to: snapshot))
         } catch QuotaError.decoding {
             guard let userID = userID(fromCookie: cookie) else { throw QuotaError.decoding("响应里没有套餐用量数据") }
             let legacy = try await get(path: "/api/usage?user=\(userID)", cookie: cookie)
             let snapshot = try makeLegacySnapshot(
                 usagePayload: legacy,
                 planName: membershipType(in: summary).map(displayName(forMembership:)))
-            // 旧接口也走缓存，避免周期接口短暂失败后丢掉仍有效的每周窗口。
-            return WeeklyCache.apply(to: snapshot)
+            // 旧接口也走缓存，避免周期接口短暂失败后丢掉仍有效的每周窗口 / Credits。
+            return CreditsCache.apply(to: WeeklyCache.apply(to: snapshot))
         }
     }
 
@@ -112,6 +113,29 @@ public enum CursorProvider: QuotaProvider {
             return value
         }
         return try? await post(path: "/api/dashboard/get-plan-info", cookie: cookie)
+    }
+
+    /// Account balance 的赠送额度。网页 `/get-client-visible-credit-grants` 经常空壳 `{}`，
+    /// 同时打编辑器 RPC，优先返回带 `grants` 列表的那份。
+    private static func creditGrantsPayload(cookie: String, token: String?) async -> Any? {
+        await withTaskGroup(of: Any?.self) { group in
+            if let token {
+                group.addTask { try? await rpc("GetClientVisibleCreditGrants", token: token) }
+            }
+            group.addTask {
+                try? await post(path: "/api/dashboard/get-client-visible-credit-grants", cookie: cookie)
+            }
+            var fallback: Any?
+            for await value in group {
+                guard let value else { continue }
+                if creditGrants(in: value) != nil {
+                    group.cancelAll()
+                    return value
+                }
+                if fallback == nil { fallback = value }
+            }
+            return fallback
+        }
     }
 
     /// Cursor 编辑器调用的 Connect RPC。会话 Cookie 里 `::` 后面那段就是它认的 Bearer token。
@@ -336,17 +360,24 @@ public enum CursorProvider: QuotaProvider {
     ///
     /// 赠送额度看 `remainingCents`；Stripe 的 `customerBalance` 单位是美分，
     /// 负数表示账户里还有预存，正数是欠款，不算剩余。两份都没有时返回 nil。
+    ///
+    /// 成功但空的 grants 响应（常见 `{}`）视为「赠送额度为 0」，不是「没取到」——
+    /// 否则 stripe 也抖一下时 `balance` 会变成 nil，界面只剩百分比、Credits 整行消失。
     static func accountCredits(grantsPayload: Any?, stripePayload: Any?) -> CreditBalance? {
         var cents = 0.0
         var found = false
-        if let grants = creditGrants(in: grantsPayload) {
-            found = true
-            for grant in grants {
-                if let remaining = JSONSearch.number(grant["remainingCents"] ?? grant["remaining_cents"]),
-                   remaining > 0
-                {
-                    cents += remaining
+        if let grantsPayload {
+            if let grants = creditGrants(in: grantsPayload) {
+                found = true
+                for grant in grants {
+                    if let remaining = JSONSearch.number(grant["remainingCents"] ?? grant["remaining_cents"]),
+                       remaining > 0
+                    {
+                        cents += remaining
+                    }
                 }
+            } else if grantsPayload is [String: Any] || grantsPayload is [[String: Any]] {
+                found = true
             }
         }
         if let stripe = stripePayload as? [String: Any],
@@ -361,7 +392,7 @@ public enum CursorProvider: QuotaProvider {
         return CreditBalance(remaining: cents / 100, unit: "USD")
     }
 
-    private static func creditGrants(in payload: Any?) -> [[String: Any]]? {
+    static func creditGrants(in payload: Any?) -> [[String: Any]]? {
         guard let payload else { return nil }
         if let grants = payload as? [[String: Any]] { return grants }
         guard let root = payload as? [String: Any] else { return nil }
@@ -554,6 +585,57 @@ extension CursorProvider {
         static func isValid(_ entry: Entry, now: Date) -> Bool {
             if let resetsAt = entry.resetsAt { return resetsAt > now }
             return now.timeIntervalSince(entry.savedAt) < 7 * 86_400
+        }
+
+        static func load(from url: URL) -> Entry? {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(Entry.self, from: data)
+        }
+
+        static func save(_ entry: Entry, to url: URL) {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            guard let data = try? encoder.encode(entry) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// 最近一次拿到的 Account balance / Credits。
+    ///
+    /// grants 与 stripe 都是 best-effort：任一抖一下就会让 `balance == nil`，
+    /// 而每周百分比还能靠 `WeeklyCache` 撑住——界面就变成「有百分比、没 Credits」。
+    /// 这里把上次成功的余额（含 $0.00）缓存下来顶上。
+    enum CreditsCache {
+        struct Entry: Codable, Equatable {
+            var remaining: Double
+            var unit: String
+            var savedAt: Date
+        }
+
+        private static let fileName = "cursor-credits.json"
+        /// 没有独立重置时间，最多沿用 7 天。
+        private static let maxAge: TimeInterval = 7 * 86_400
+
+        static var defaultURL: URL? {
+            SharedStore.containerURL?.appendingPathComponent(fileName)
+        }
+
+        static func apply(to snapshot: QuotaSnapshot, now: Date = Date(), url: URL? = defaultURL) -> QuotaSnapshot {
+            guard let url else { return snapshot }
+            if let balance = snapshot.balance {
+                save(Entry(remaining: balance.remaining, unit: balance.unit, savedAt: now), to: url)
+                return snapshot
+            }
+            guard let entry = load(from: url), isValid(entry, now: now) else { return snapshot }
+            var result = snapshot
+            result.balance = CreditBalance(remaining: entry.remaining, unit: entry.unit)
+            return result
+        }
+
+        static func isValid(_ entry: Entry, now: Date) -> Bool {
+            now.timeIntervalSince(entry.savedAt) < maxAge
         }
 
         static func load(from url: URL) -> Entry? {
