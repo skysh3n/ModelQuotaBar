@@ -43,8 +43,13 @@ public enum CredentialStore {
               let data = try? Data(contentsOf: legacy),
               let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
-        try? persist(decoded)
-        try? FileManager.default.removeItem(at: legacy)
+        // 只有新位置写成功才删旧文件，避免共享目录不可写时永久丢凭据。
+        do {
+            try persist(decoded)
+            try? FileManager.default.removeItem(at: legacy)
+        } catch {
+            // 本进程仍可用内存里这份；下次启动还会再尝试迁移。
+        }
         return decoded
     }
 

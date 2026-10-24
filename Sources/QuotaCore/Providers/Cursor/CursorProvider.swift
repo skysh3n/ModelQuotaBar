@@ -58,7 +58,8 @@ public enum CursorProvider: QuotaProvider {
         async let periodTask = currentPeriodUsage(cookie: cookie, token: token)
         async let planInfoTask = planInfo(cookie: cookie, token: token)
         // Account balance 的「Credits available」：赠送额度加上 Stripe 预存（负数才是余额）。
-        async let grantsTask = try? post(path: "/api/dashboard/get-client-visible-credit-grants", cookie: cookie)
+        // grants 的网页接口偶发只回 `{}`，与编辑器 RPC 并行，谁先给出 grants 列表用谁。
+        async let grantsTask = creditGrantsPayload(cookie: cookie, token: token)
         async let stripeTask = try? get(path: "/api/auth/stripe", cookie: cookie)
         let (period, planInfo, grants, stripe) = await (periodTask, planInfoTask, grantsTask, stripeTask)
         do {
@@ -68,13 +69,15 @@ public enum CursorProvider: QuotaProvider {
                 grantsPayload: grants,
                 stripePayload: stripe,
                 planInfoPayload: planInfo)
-            return WeeklyCache.apply(to: snapshot)
+            return CreditsCache.apply(to: WeeklyCache.apply(to: snapshot))
         } catch QuotaError.decoding {
             guard let userID = userID(fromCookie: cookie) else { throw QuotaError.decoding("响应里没有套餐用量数据") }
             let legacy = try await get(path: "/api/usage?user=\(userID)", cookie: cookie)
-            return try makeLegacySnapshot(
+            let snapshot = try makeLegacySnapshot(
                 usagePayload: legacy,
                 planName: membershipType(in: summary).map(displayName(forMembership:)))
+            // 旧接口也走缓存，避免周期接口短暂失败后丢掉仍有效的每周窗口 / Credits。
+            return CreditsCache.apply(to: WeeklyCache.apply(to: snapshot))
         }
     }
 
@@ -110,6 +113,29 @@ public enum CursorProvider: QuotaProvider {
             return value
         }
         return try? await post(path: "/api/dashboard/get-plan-info", cookie: cookie)
+    }
+
+    /// Account balance 的赠送额度。网页 `/get-client-visible-credit-grants` 经常空壳 `{}`，
+    /// 同时打编辑器 RPC，优先返回带 `grants` 列表的那份。
+    private static func creditGrantsPayload(cookie: String, token: String?) async -> Any? {
+        await withTaskGroup(of: Any?.self) { group in
+            if let token {
+                group.addTask { try? await rpc("GetClientVisibleCreditGrants", token: token) }
+            }
+            group.addTask {
+                try? await post(path: "/api/dashboard/get-client-visible-credit-grants", cookie: cookie)
+            }
+            var fallback: Any?
+            for await value in group {
+                guard let value else { continue }
+                if creditGrants(in: value) != nil {
+                    group.cancelAll()
+                    return value
+                }
+                if fallback == nil { fallback = value }
+            }
+            return fallback
+        }
     }
 
     /// Cursor 编辑器调用的 Connect RPC。会话 Cookie 里 `::` 后面那段就是它认的 Bearer token。
@@ -207,13 +233,15 @@ public enum CursorProvider: QuotaProvider {
 
     /// 归一化用户粘贴的凭据：只粘了值时补上键名；值里的 `::` 是解码后的形式，
     /// 服务端只认 URL 编码后的 `%3A%3A`。
+    ///
+    /// 已带键名的完整 Cookie 头也要编码：浏览器 / 开发者工具有时给出解码后的 `::`。
     static func normalizedCookie(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "::", with: "%3A%3A")
         if trimmed.contains("\(sessionCookieName)=") {
             return trimmed
         }
-        let value = trimmed.replacingOccurrences(of: "::", with: "%3A%3A")
-        return "\(sessionCookieName)=\(value)"
+        return "\(sessionCookieName)=\(trimmed)"
     }
 
     /// 从 Cookie 里取出 `user_…::` 后面的 JWT。
@@ -258,13 +286,14 @@ public enum CursorProvider: QuotaProvider {
         }
         let period = periodPayload as? [String: Any]
         let planUsage = period?["planUsage"] as? [String: Any]
-        let weeklyPlan = Self.weeklyPlan(planInfoPayload)
+        let membership = membershipType(in: summaryPayload)
+        // get-plan-info 偶发失败时，Premium 等仍按周额度处理，避免退回月度 summary 的空壳 0%。
+        let weeklyPlan = Self.weeklyPlan(planInfoPayload, membershipType: membership)
         let cycleStart = date(period?["billingCycleStart"]) ?? date(root["billingCycleStart"])
-        var resetsAt = weeklyPlan.resetsAt
+        let resetsAt = weeklyPlan.resetsAt
             ?? date(period?["billingCycleEnd"])
             ?? date(root["billingCycleEnd"])
         let individual = root["individualUsage"] as? [String: Any]
-        let team = root["teamUsage"] as? [String: Any]
 
         var windows: [QuotaWindow] = []
 
@@ -331,17 +360,24 @@ public enum CursorProvider: QuotaProvider {
     ///
     /// 赠送额度看 `remainingCents`；Stripe 的 `customerBalance` 单位是美分，
     /// 负数表示账户里还有预存，正数是欠款，不算剩余。两份都没有时返回 nil。
+    ///
+    /// 成功但空的 grants 响应（常见 `{}`）视为「赠送额度为 0」，不是「没取到」——
+    /// 否则 stripe 也抖一下时 `balance` 会变成 nil，界面只剩百分比、Credits 整行消失。
     static func accountCredits(grantsPayload: Any?, stripePayload: Any?) -> CreditBalance? {
         var cents = 0.0
         var found = false
-        if let grants = creditGrants(in: grantsPayload) {
-            found = true
-            for grant in grants {
-                if let remaining = JSONSearch.number(grant["remainingCents"] ?? grant["remaining_cents"]),
-                   remaining > 0
-                {
-                    cents += remaining
+        if let grantsPayload {
+            if let grants = creditGrants(in: grantsPayload) {
+                found = true
+                for grant in grants {
+                    if let remaining = JSONSearch.number(grant["remainingCents"] ?? grant["remaining_cents"]),
+                       remaining > 0
+                    {
+                        cents += remaining
+                    }
                 }
+            } else if grantsPayload is [String: Any] || grantsPayload is [[String: Any]] {
+                found = true
             }
         }
         if let stripe = stripePayload as? [String: Any],
@@ -356,7 +392,7 @@ public enum CursorProvider: QuotaProvider {
         return CreditBalance(remaining: cents / 100, unit: "USD")
     }
 
-    private static func creditGrants(in payload: Any?) -> [[String: Any]]? {
+    static func creditGrants(in payload: Any?) -> [[String: Any]]? {
         guard let payload else { return nil }
         if let grants = payload as? [[String: Any]] { return grants }
         guard let root = payload as? [String: Any] else { return nil }
@@ -412,6 +448,7 @@ public enum CursorProvider: QuotaProvider {
         case "free_trial": "Pro 试用"
         case "pro": "Pro"
         case "pro_plus", "pro-plus", "proplus": "Pro+"
+        case "premium": "Premium"
         case "ultra": "Ultra"
         case "business", "team": "Business"
         case "enterprise": "Enterprise"
@@ -419,19 +456,40 @@ public enum CursorProvider: QuotaProvider {
         }
     }
 
-    /// Premium 这类套餐的包含额度按周计算。周期和重置时间在 get-plan-info 里。
-    static func weeklyPlan(_ payload: Any?) -> (weekly: Bool, resetsAt: Date?) {
-        guard let root = payload as? [String: Any] else { return (false, nil) }
-        let info = (root["planInfo"] as? [String: Any]) ?? root
-        let weekly: Bool
-        if let number = JSONSearch.number(info["includedUsagePeriod"]) {
-            weekly = number == 2
-        } else if let name = JSONSearch.string(info["includedUsagePeriod"])?.uppercased() {
-            weekly = name.contains("WEEKLY")
-        } else {
-            weekly = false
+    /// 这些档次的包含额度按周重置；`get-plan-info` 失败时也按周处理。
+    static func isWeeklyMembership(_ type: String?) -> Bool {
+        guard let type else { return false }
+        switch type.lowercased() {
+        case "premium": return true
+        default: return false
         }
-        return (weekly, date(info["includedUsageResetsAt"]))
+    }
+
+    /// Premium 这类套餐的包含额度按周计算。周期和重置时间在 get-plan-info 里。
+    ///
+    /// `membershipType` 用于 plan-info 缺失时的兜底：否则会把 usage-summary 常年停在 0 的空壳
+    /// 当成「每月剩 100%」画出来。
+    static func weeklyPlan(_ payload: Any?, membershipType: String? = nil) -> (weekly: Bool, resetsAt: Date?) {
+        let info: [String: Any]? = {
+            guard let root = payload as? [String: Any] else { return nil }
+            return (root["planInfo"] as? [String: Any]) ?? root
+        }()
+        let resetsAt = info.flatMap { date($0["includedUsageResetsAt"]) }
+        if let info {
+            let weekly: Bool
+            if let number = JSONSearch.number(info["includedUsagePeriod"]) {
+                weekly = number == 2
+            } else if let name = JSONSearch.string(info["includedUsagePeriod"])?.uppercased() {
+                weekly = name.contains("WEEKLY")
+            } else {
+                weekly = false
+            }
+            if weekly { return (true, resetsAt) }
+        }
+        if isWeeklyMembership(membershipType) {
+            return (true, resetsAt)
+        }
+        return (false, resetsAt)
     }
 
     /// 从 “You've used 3% of …” 里取出已用比例。
@@ -489,6 +547,14 @@ extension CursorProvider {
         static func apply(to snapshot: QuotaSnapshot, now: Date = Date(), url: URL? = defaultURL) -> QuotaSnapshot {
             guard let url else { return snapshot }
             if let window = snapshot.windows.first(where: { $0.id == "weekly" || $0.id == "monthly" }) {
+                // 空壳「每月已用 0%」不要盖掉仍有效的每周缓存（周期接口抖的时候容易冒出来）。
+                if window.id == "monthly", window.usedRatio == 0,
+                   let entry = load(from: url), entry.id == "weekly", isValid(entry, now: now)
+                {
+                    var cleaned = snapshot
+                    cleaned.windows.removeAll { $0.id == "monthly" && $0.usedRatio == 0 }
+                    return withCachedWindow(entry, on: cleaned)
+                }
                 save(Entry(
                     id: window.id,
                     title: window.title,
@@ -500,6 +566,10 @@ extension CursorProvider {
                 return snapshot
             }
             guard let entry = load(from: url), isValid(entry, now: now) else { return snapshot }
+            return withCachedWindow(entry, on: snapshot)
+        }
+
+        private static func withCachedWindow(_ entry: Entry, on snapshot: QuotaSnapshot) -> QuotaSnapshot {
             var result = snapshot
             result.windows.insert(QuotaWindow(
                 id: entry.id,
@@ -515,6 +585,57 @@ extension CursorProvider {
         static func isValid(_ entry: Entry, now: Date) -> Bool {
             if let resetsAt = entry.resetsAt { return resetsAt > now }
             return now.timeIntervalSince(entry.savedAt) < 7 * 86_400
+        }
+
+        static func load(from url: URL) -> Entry? {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(Entry.self, from: data)
+        }
+
+        static func save(_ entry: Entry, to url: URL) {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            guard let data = try? encoder.encode(entry) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// 最近一次拿到的 Account balance / Credits。
+    ///
+    /// grants 与 stripe 都是 best-effort：任一抖一下就会让 `balance == nil`，
+    /// 而每周百分比还能靠 `WeeklyCache` 撑住——界面就变成「有百分比、没 Credits」。
+    /// 这里把上次成功的余额（含 $0.00）缓存下来顶上。
+    enum CreditsCache {
+        struct Entry: Codable, Equatable {
+            var remaining: Double
+            var unit: String
+            var savedAt: Date
+        }
+
+        private static let fileName = "cursor-credits.json"
+        /// 没有独立重置时间，最多沿用 7 天。
+        private static let maxAge: TimeInterval = 7 * 86_400
+
+        static var defaultURL: URL? {
+            SharedStore.containerURL?.appendingPathComponent(fileName)
+        }
+
+        static func apply(to snapshot: QuotaSnapshot, now: Date = Date(), url: URL? = defaultURL) -> QuotaSnapshot {
+            guard let url else { return snapshot }
+            if let balance = snapshot.balance {
+                save(Entry(remaining: balance.remaining, unit: balance.unit, savedAt: now), to: url)
+                return snapshot
+            }
+            guard let entry = load(from: url), isValid(entry, now: now) else { return snapshot }
+            var result = snapshot
+            result.balance = CreditBalance(remaining: entry.remaining, unit: entry.unit)
+            return result
+        }
+
+        static func isValid(_ entry: Entry, now: Date) -> Bool {
+            now.timeIntervalSince(entry.savedAt) < maxAge
         }
 
         static func load(from url: URL) -> Entry? {

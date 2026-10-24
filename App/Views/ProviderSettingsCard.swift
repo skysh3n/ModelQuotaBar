@@ -34,7 +34,7 @@ struct ProviderSettingsCard: View {
         .padding(14)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
         .task {
-            credential = CredentialStore.loadCredential(for: providerID)
+            loadCredentialApplyingDefaults()
         }
     }
 
@@ -56,7 +56,7 @@ struct ProviderSettingsCard: View {
                 set: { newValue in
                     environment.settings.setEnabled(newValue, for: providerID)
                     if newValue {
-                        credential = CredentialStore.loadCredential(for: providerID)
+                        loadCredentialApplyingDefaults()
                         testState = .idle
                     } else {
                         credential = ProviderCredential()
@@ -143,6 +143,16 @@ struct ProviderSettingsCard: View {
         )
     }
 
+    /// 读出已存凭据，并把声明了 defaultValue 却尚未写入的字段补上后落盘。
+    private func loadCredentialApplyingDefaults() {
+        let stored = CredentialStore.loadCredential(for: providerID)
+        let loaded = stored.resolvingDefaults(for: provider.credentialFields)
+        credential = loaded
+        if loaded.allValues != stored.allValues {
+            persist()
+        }
+    }
+
     private func persist() {
         do {
             try CredentialStore.save(credential, for: providerID)
@@ -175,10 +185,11 @@ struct ProviderSettingsCard: View {
                         spec: spec,
                         onCaptured: { value in
                             credential[spec.targetFieldID] = value
+                            // 登录只写入 Cookie；补上站点等默认值，避免刷新时被当成缺凭据。
+                            credential = credential.resolvingDefaults(for: provider.credentialFields)
                             persist()
                             isShowingWebLogin = false
-                            // 把新凭据立刻用起来。
-                            environment.didCaptureLogin()
+                            // 测通后再刷概览；不要同时再开一轮 refresh，以免旧结果盖掉新数据。
                             runTest()
                         },
                         onCancel: { isShowingWebLogin = false })

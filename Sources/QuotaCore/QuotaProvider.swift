@@ -79,11 +79,22 @@ public struct ProviderCredential: Sendable, Hashable {
         set { values[key] = newValue }
     }
 
-    /// 是否所有必填字段都已填写。
+    /// 是否所有必填字段都已填写。有 `defaultValue` 的字段视为已满足。
     public func isComplete(for fields: [CredentialField]) -> Bool {
         fields.allSatisfy { field in
-            field.isOptional || self[field.id] != nil
+            field.isOptional || self[field.id] != nil || field.defaultValue != nil
         }
+    }
+
+    /// 把尚未填写、但声明了默认值的字段补上。不覆盖用户已有值。
+    public func resolvingDefaults(for fields: [CredentialField]) -> ProviderCredential {
+        var merged = self
+        for field in fields {
+            if merged[field.id] == nil, let defaultValue = field.defaultValue {
+                merged[field.id] = defaultValue
+            }
+        }
+        return merged
     }
 
     public var isEmpty: Bool { values.isEmpty }

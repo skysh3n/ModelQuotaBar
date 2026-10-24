@@ -184,6 +184,7 @@ struct SmallWidgetView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
+                        .layoutPriority(1)
                 }
             } else if let balance = snapshot.balanceRemaining {
                 Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
@@ -376,6 +377,7 @@ private struct SourceColumn: View {
 
             Spacer(minLength: 0)
 
+            // 底栏 Credits 提高布局优先级，避免中尺寸双栏高度吃紧时被 Spacer 挤没。
             if let credits = widgetCreditsText(snapshot) {
                 Text(credits)
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -383,6 +385,7 @@ private struct SourceColumn: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
             }
         }
     }

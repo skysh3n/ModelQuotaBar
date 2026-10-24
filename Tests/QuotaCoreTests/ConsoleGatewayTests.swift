@@ -118,6 +118,54 @@ enum JSONSearchTests {
     }
 }
 
+enum CredentialFieldTests {
+    static let suite = TestSuite("凭据字段默认值", [
+        ("有 defaultValue 的必填字段视为已完整", testDefaultValueSatisfiesCompleteness),
+        ("resolvingDefaults 补上缺省但不覆盖已有值", testResolvingDefaultsFillsWithoutOverwrite),
+        ("千问只有 Cookie 时也算配置完整", testQwenCookieAloneIsComplete),
+    ])
+
+    private static let regionField = CredentialField(
+        id: "region",
+        title: "站点",
+        kind: .picker(options: [
+            CredentialField.Option(id: "cn", title: "中国站"),
+            CredentialField.Option(id: "intl", title: "国际站"),
+        ]),
+        defaultValue: "cn")
+
+    private static let cookieField = CredentialField(
+        id: "cookie",
+        title: "控制台会话 Cookie",
+        kind: .secret)
+
+    static func testDefaultValueSatisfiesCompleteness() throws {
+        let fields = [cookieField, regionField]
+        try Expect.isTrue(!ProviderCredential(["cookie": "ticket"]).isComplete(for: [cookieField, CredentialField(id: "region", title: "站点")]))
+        try Expect.isTrue(ProviderCredential(["cookie": "ticket"]).isComplete(for: fields))
+        try Expect.isTrue(!ProviderCredential().isComplete(for: fields))
+    }
+
+    static func testResolvingDefaultsFillsWithoutOverwrite() throws {
+        let fields = [cookieField, regionField]
+        let filled = ProviderCredential(["cookie": "ticket"]).resolvingDefaults(for: fields)
+        try Expect.equal(filled["region"], "cn")
+        try Expect.equal(filled["cookie"], "ticket")
+
+        let kept = ProviderCredential(["cookie": "ticket", "region": "intl"])
+            .resolvingDefaults(for: fields)
+        try Expect.equal(kept["region"], "intl")
+    }
+
+    static func testQwenCookieAloneIsComplete() throws {
+        let fields = QwenTokenPlanProvider.credentialFields
+        let credential = ProviderCredential(["cookie": "login_aliyunid_ticket=abc"])
+        try Expect.isTrue(credential.isComplete(for: fields))
+        let resolved = credential.resolvingDefaults(for: fields)
+        try Expect.equal(resolved["region"], QwenTokenPlanRegion.chinaMainland.rawValue)
+    }
+}
+
 enum QuotaWindowTests {
     static let suite = TestSuite("额度窗口模型", [
         ("已用比例被钳制到 0...1", testUsedRatioIsClamped),
