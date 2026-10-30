@@ -139,15 +139,12 @@ struct QuotaWidgetEntryView: View {
 /// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
 ///
 /// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底。
-///
-/// 加载反馈用系统的 `invalidatableContent`：WidgetKit 视图是归档快照，
-/// 自写 ProgressView / 共享标记+reload 容易因竞态根本画不出来；intent 跑着时
-/// 系统会直接给标了 invalidatable 的内容叠加载入效果。
+/// 不用 `.plain`：macOS 上 plain 有时吃掉命中，点击落到小组件空白处反而会打开主应用。
+/// 无 `Link` / `widgetURL` / `openURL`——只绑扩展独占的 `RefreshQuotaIntent`。
 private struct WidgetRefreshButton: View {
     let sources: [WidgetSource]
 
     var body: some View {
-        // 只刷新当前勾选的来源，没显示的供应商直接跳过。
         Button(intent: RefreshQuotaIntent(sources: sources)) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 14, weight: .semibold))
@@ -157,7 +154,7 @@ private struct WidgetRefreshButton: View {
                 .contentShape(Circle())
                 .invalidatableContent()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .accessibilityLabel("刷新额度")
     }
 }

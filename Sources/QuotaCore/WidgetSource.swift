@@ -2,39 +2,9 @@ import AppIntents
 import Foundation
 import WidgetKit
 
-/// 小组件里那个刷新按钮背后的意图。
-///
-/// WidgetKit 不提供「小组件被看到」的回调，所以没法做到「一被观察就自动刷新」。
-/// 系统支持的做法是交互式小组件：放置一个按钮，用户点它时在扩展进程里执行这个
-/// intent——正好就是「我看它的时候让它刷新」。
-struct RefreshQuotaIntent: AppIntent {
-    static let title: LocalizedStringResource = "刷新额度"
-    /// 必须为 false：否则系统会为了跑 intent 激活/打开主应用，桌面小组件点刷新就会弹主界面。
-    static var openAppWhenRun: Bool = false
-
-    /// 当前小组件勾选的来源。没带时退回全部，兼容旧按钮。
-    @Parameter(title: "显示来源", default: [.qwen, .deepseek, .cursor])
-    var sources: [WidgetSource]
-
-    init() {}
-
-    init(sources: [WidgetSource]) {
-        self.init()
-        self.sources = sources
-    }
-
-    func perform() async throws -> some IntentResult {
-        let ids = Set(WidgetSource.effectiveDisplaySources(sources).map(\.rawValue))
-        let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
-        SharedStore.saveMerging(fresh)
-        // 交互触发的 reload 有保证会跑；按钮/内容上的 invalidatableContent
-        // 在 perform 返回前由系统显示加载态，这里只需把新数据拱上去。
-        WidgetReloader.reload()
-        return .result()
-    }
-}
-
-/// WidgetKit 的 reload 只在本文件里用，单独包一层避免核心逻辑依赖 WidgetKit API 的细节。
+/// WidgetKit 的 reload。主应用与扩展都会编译本文件；刷新按钮的 App Intent
+/// 单独放在 `Widget/RefreshQuotaIntent.swift`（只进扩展 target），避免双 target
+/// 时在主应用进程执行并弹出主窗口。
 enum WidgetReloader {
     static func reload() {
         // WidgetCenter 在扩展进程里可用。
