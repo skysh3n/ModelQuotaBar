@@ -22,11 +22,17 @@ struct RefreshQuotaIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        // 先打上「刷新中」并重载时间线，按钮才能换成转圈；抓完再清掉重载一次。
+        SharedStore.WidgetRefreshFlag.begin()
+        WidgetReloader.reload()
+        defer {
+            SharedStore.WidgetRefreshFlag.end()
+            WidgetReloader.reload()
+        }
+
         let ids = Set(WidgetSource.effectiveDisplaySources(sources).map(\.rawValue))
         let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
         SharedStore.saveMerging(fresh)
-        // 交互后让系统重绘小组件。
-        WidgetReloader.reload()
         return .result()
     }
 }

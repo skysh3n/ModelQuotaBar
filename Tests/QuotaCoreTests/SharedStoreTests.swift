@@ -8,6 +8,7 @@ enum SharedStoreTests {
         ("两个进程必须解析到同一路径", testBothProcessesAgreeOnSamePath),
         ("拿不到 appSupport 时也能解析", testFallsBackWhenAppSupportMissing),
         ("部分刷新只覆盖抓到的来源", testMergeKeepsUnfetchedSources),
+        ("小组件刷新标记 begin/end 与过期", testWidgetRefreshFlagLifecycle),
     ])
 
     private static let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
@@ -75,5 +76,22 @@ enum SharedStoreTests {
         try Expect.equal(
             try Expect.notNil(try Expect.notNil(merged.last).primaryRemainingRatio),
             0.9, accuracy: 1e-9)
+    }
+
+    static func testWidgetRefreshFlagLifecycle() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("widget-refresh-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try Expect.isTrue(!SharedStore.WidgetRefreshFlag.isRefreshing(now: now, url: url))
+        SharedStore.WidgetRefreshFlag.begin(now: now, url: url)
+        try Expect.isTrue(SharedStore.WidgetRefreshFlag.isRefreshing(now: now.addingTimeInterval(5), url: url))
+        try Expect.isTrue(!SharedStore.WidgetRefreshFlag.isRefreshing(
+            now: now.addingTimeInterval(SharedStore.WidgetRefreshFlag.maxAge + 1),
+            url: url))
+
+        SharedStore.WidgetRefreshFlag.end(url: url)
+        try Expect.isTrue(!SharedStore.WidgetRefreshFlag.isRefreshing(now: now.addingTimeInterval(5), url: url))
     }
 }

@@ -8,6 +8,8 @@ struct QuotaEntry: TimelineEntry {
     let date: Date
     let allSnapshots: [WidgetSnapshot]
     let sources: [WidgetSource]
+    /// 用户点了刷新、intent 还在跑。靠共享容器标记 + 重载时间线驱动，不是常驻动画。
+    var isRefreshing: Bool
 
     var selectedSnapshots: [WidgetSnapshot] {
         WidgetSource.select(sources, from: allSnapshots)
@@ -34,13 +36,18 @@ extension QuotaEntry {
                     balanceRemaining: 110.0, balanceUnit: "CNY",
                     secondaryWindows: [], remainingDays: nil, updatedAt: Date()),
             ],
-            sources: [.qwen, .deepseek])
+            sources: [.qwen, .deepseek],
+            isRefreshing: false)
     }
 }
 
 /// 只读共享容器里上次写好的快照。切换尺寸、编辑勾选时必须秒回，不能碰网络。
 private func cachedQuotaEntry(sources: [WidgetSource]) -> QuotaEntry {
-    QuotaEntry(date: Date(), allSnapshots: SharedStore.loadSnapshots(), sources: sources)
+    QuotaEntry(
+        date: Date(),
+        allSnapshots: SharedStore.loadSnapshots(),
+        sources: sources,
+        isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing())
 }
 
 /// 只抓当前勾选的来源；结果盖到缓存上，未显示的供应商原样保留。
@@ -89,14 +96,26 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
                 }
             }
             return Timeline(
-                entries: [QuotaEntry(date: Date(), allSnapshots: cached, sources: sources)],
+                entries: [
+                    QuotaEntry(
+                        date: Date(),
+                        allSnapshots: cached,
+                        sources: sources,
+                        isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing()),
+                ],
                 policy: quotaRefreshPolicy())
         }
 
         // 冷启动：没有缓存才同步等一轮（仍只抓勾选的来源）。
         let snapshots = await refreshSelectedSources(sources)
         return Timeline(
-            entries: [QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)],
+            entries: [
+                QuotaEntry(
+                    date: Date(),
+                    allSnapshots: snapshots,
+                    sources: sources,
+                    isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing()),
+            ],
             policy: quotaRefreshPolicy())
     }
 }
@@ -128,7 +147,7 @@ struct QuotaWidgetEntryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // AppIntent 交互不占小组件每日刷新预算。
-            WidgetRefreshButton(sources: entry.sources)
+            WidgetRefreshButton(sources: entry.sources, isRefreshing: entry.isRefreshing)
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -138,21 +157,34 @@ struct QuotaWidgetEntryView: View {
 ///
 /// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
 /// 既够手指/鼠标点，也不会在卡片里显得突兀。
+///
+/// 加载反馈不能靠主应用那种常驻 `repeatForever`（时间线是快照）；intent 期间
+/// 写入共享标记并 reload，这里换成 ProgressView，结束后再换回箭头。
 private struct WidgetRefreshButton: View {
     let sources: [WidgetSource]
+    var isRefreshing: Bool
 
     var body: some View {
         // 只刷新当前勾选的来源，没显示的供应商直接跳过。
         Button(intent: RefreshQuotaIntent(sources: sources)) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
-                .background(.quaternary.opacity(0.7), in: Circle())
-                .contentShape(Circle())
+            ZStack {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 30, height: 30)
+            .background(.quaternary.opacity(0.7), in: Circle())
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .disabled(isRefreshing)
         .accessibilityLabel("刷新额度")
+        .accessibilityValue(isRefreshing ? "正在刷新" : "空闲")
     }
 }
 
