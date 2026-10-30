@@ -33,15 +33,18 @@ struct DashboardView: View {
                 Text("额度概览")
                     .font(.headline)
                 Spacer()
-                if store.isRefreshing {
-                    ProgressView().controlSize(.small).scaleEffect(0.7)
-                }
                 Button {
                     Task { await environment.refresh() }
                 } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+                    Label {
+                        Text("刷新")
+                    } icon: {
+                        Image(systemName: "arrow.clockwise")
+                            .symbolEffect(.rotate, options: .repeating, isActive: store.isRefreshing)
+                    }
                 }
                 .disabled(store.isRefreshing)
+                .accessibilityValue(store.isRefreshing ? "正在刷新" : "空闲")
             }
 
             if store.results.isEmpty {
