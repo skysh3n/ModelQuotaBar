@@ -15,7 +15,12 @@ struct ProviderCardView: View {
             if let error = result.error {
                 errorBody(error)
             } else if result.snapshot == nil {
-                loadingBody
+                // 未自动拉取：空闲时提示手动刷新，只有 isLoading 才转圈。
+                if result.isLoading {
+                    loadingBody
+                } else {
+                    idleBody
+                }
             }
         }
         .padding(12)
@@ -161,5 +166,11 @@ struct ProviderCardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var idleBody: some View {
+        Text("点右上角「刷新」获取额度")
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 }

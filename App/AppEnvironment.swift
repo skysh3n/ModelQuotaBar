@@ -17,11 +17,7 @@ final class AppEnvironment {
         store.onWidgetDataChanged = {
             WidgetCenter.shared.reloadAllTimelines()
         }
-
-        // 只在打开时拉一次。回到前台、切桌面、唤醒都不再自动刷新，之后用手动刷新。
-        Task { @MainActor [weak self] in
-            await self?.refresh()
-        }
+        // 不在启动时自动刷新：只等用户点「刷新」（或改用来源后的 providersDidChange）。
     }
 
     // MARK: - 刷新

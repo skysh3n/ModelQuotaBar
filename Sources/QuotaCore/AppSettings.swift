@@ -3,7 +3,7 @@ import Observation
 
 /// 应用设置。凭据不在这里，见 `CredentialStore`。
 ///
-/// 刷新节奏也不在这里配置：主应用打开时拉一次，之后手动刷新。见 `QuotaStore`。
+/// 刷新节奏也不在这里配置：主应用只手动刷新。见 `QuotaStore`。
 @MainActor
 @Observable
 public final class AppSettings {

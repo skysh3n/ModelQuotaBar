@@ -9,6 +9,8 @@ import WidgetKit
 /// intent——正好就是「我看它的时候让它刷新」。
 struct RefreshQuotaIntent: AppIntent {
     static let title: LocalizedStringResource = "刷新额度"
+    /// 必须为 false：否则系统会为了跑 intent 激活/打开主应用，桌面小组件点刷新就会弹主界面。
+    static var openAppWhenRun: Bool = false
 
     /// 当前小组件勾选的来源。没带时退回全部，兼容旧按钮。
     @Parameter(title: "显示来源", default: [.qwen, .deepseek, .cursor])

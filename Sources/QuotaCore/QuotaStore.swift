@@ -18,7 +18,7 @@ public struct ProviderResult: Sendable, Identifiable {
 
 /// 额度查询的调度中心。
 ///
-/// 刷新没有定时轮询：主应用只在打开时拉一次，之后靠手动刷新。
+/// 刷新没有定时轮询：主应用只靠手动刷新（及启用来源时的那一次）。
 /// 小组件自己抓数据，由系统调度。
 @MainActor
 @Observable
@@ -72,6 +72,11 @@ public final class QuotaStore {
         refreshGeneration += 1
         let generation = refreshGeneration
         isRefreshing = true
+        results = results.map { result in
+            var loading = result
+            loading.isLoading = true
+            return loading
+        }
         defer {
             if generation == refreshGeneration {
                 isRefreshing = false
