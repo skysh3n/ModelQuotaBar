@@ -117,46 +117,6 @@ public enum SharedStore {
         return ordered + extras
     }
 
-    // MARK: - 小组件手动刷新中
-
-    /// 小组件点刷新时写入的短暂标记。WidgetKit 视图是时间线快照，没法像主应用那样
-    /// 靠 `@State` 连续转圈；intent 开始/结束各 reload 一次，用这份标记切换按钮外观。
-    public enum WidgetRefreshFlag {
-        private static let fileName = "widget-refreshing.json"
-        /// 进程被杀时避免标记永久卡住。
-        public static let maxAge: TimeInterval = 60
-
-        struct Entry: Codable, Equatable {
-            var startedAt: Date
-        }
-
-        static var defaultURL: URL? {
-            SharedStore.containerURL?.appendingPathComponent(fileName)
-        }
-
-        public static func isRefreshing(now: Date = Date(), url: URL? = nil) -> Bool {
-            guard let url = url ?? defaultURL,
-                  let data = try? Data(contentsOf: url)
-            else { return false }
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            guard let entry = try? decoder.decode(Entry.self, from: data) else { return false }
-            return now.timeIntervalSince(entry.startedAt) < maxAge
-        }
-
-        public static func begin(now: Date = Date(), url: URL? = nil) {
-            guard let url = url ?? defaultURL else { return }
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            guard let data = try? encoder.encode(Entry(startedAt: now)) else { return }
-            try? data.write(to: url, options: .atomic)
-        }
-
-        public static func end(url: URL? = nil) {
-            guard let url = url ?? defaultURL else { return }
-            try? FileManager.default.removeItem(at: url)
-        }
-    }
 }
 
 /// 小组件渲染所需的最小数据集。

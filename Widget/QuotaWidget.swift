@@ -8,8 +8,6 @@ struct QuotaEntry: TimelineEntry {
     let date: Date
     let allSnapshots: [WidgetSnapshot]
     let sources: [WidgetSource]
-    /// 用户点了刷新、intent 还在跑。靠共享容器标记 + 重载时间线驱动，不是常驻动画。
-    var isRefreshing: Bool
 
     var selectedSnapshots: [WidgetSnapshot] {
         WidgetSource.select(sources, from: allSnapshots)
@@ -36,18 +34,13 @@ extension QuotaEntry {
                     balanceRemaining: 110.0, balanceUnit: "CNY",
                     secondaryWindows: [], remainingDays: nil, updatedAt: Date()),
             ],
-            sources: [.qwen, .deepseek],
-            isRefreshing: false)
+            sources: [.qwen, .deepseek])
     }
 }
 
 /// 只读共享容器里上次写好的快照。切换尺寸、编辑勾选时必须秒回，不能碰网络。
 private func cachedQuotaEntry(sources: [WidgetSource]) -> QuotaEntry {
-    QuotaEntry(
-        date: Date(),
-        allSnapshots: SharedStore.loadSnapshots(),
-        sources: sources,
-        isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing())
+    QuotaEntry(date: Date(), allSnapshots: SharedStore.loadSnapshots(), sources: sources)
 }
 
 /// 只抓当前勾选的来源；结果盖到缓存上，未显示的供应商原样保留。
@@ -96,26 +89,14 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
                 }
             }
             return Timeline(
-                entries: [
-                    QuotaEntry(
-                        date: Date(),
-                        allSnapshots: cached,
-                        sources: sources,
-                        isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing()),
-                ],
+                entries: [QuotaEntry(date: Date(), allSnapshots: cached, sources: sources)],
                 policy: quotaRefreshPolicy())
         }
 
         // 冷启动：没有缓存才同步等一轮（仍只抓勾选的来源）。
         let snapshots = await refreshSelectedSources(sources)
         return Timeline(
-            entries: [
-                QuotaEntry(
-                    date: Date(),
-                    allSnapshots: snapshots,
-                    sources: sources,
-                    isRefreshing: SharedStore.WidgetRefreshFlag.isRefreshing()),
-            ],
+            entries: [QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)],
             policy: quotaRefreshPolicy())
     }
 }
@@ -144,10 +125,12 @@ struct QuotaWidgetEntryView: View {
                     EmptyWidgetView()
                 }
             }
+            // App Intent 执行期间系统给这块内容加加载态（比自管 ProgressView 可靠）。
+            .invalidatableContent()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // AppIntent 交互不占小组件每日刷新预算。
-            WidgetRefreshButton(sources: entry.sources, isRefreshing: entry.isRefreshing)
+            WidgetRefreshButton(sources: entry.sources)
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -155,36 +138,27 @@ struct QuotaWidgetEntryView: View {
 
 /// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
 ///
-/// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
-/// 既够手指/鼠标点，也不会在卡片里显得突兀。
+/// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底。
 ///
-/// 加载反馈不能靠主应用那种常驻 `repeatForever`（时间线是快照）；intent 期间
-/// 写入共享标记并 reload，这里换成 ProgressView，结束后再换回箭头。
+/// 加载反馈用系统的 `invalidatableContent`：WidgetKit 视图是归档快照，
+/// 自写 ProgressView / 共享标记+reload 容易因竞态根本画不出来；intent 跑着时
+/// 系统会直接给标了 invalidatable 的内容叠加载入效果。
 private struct WidgetRefreshButton: View {
     let sources: [WidgetSource]
-    var isRefreshing: Bool
 
     var body: some View {
         // 只刷新当前勾选的来源，没显示的供应商直接跳过。
         Button(intent: RefreshQuotaIntent(sources: sources)) {
-            ZStack {
-                if isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 30, height: 30)
-            .background(.quaternary.opacity(0.7), in: Circle())
-            .contentShape(Circle())
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .background(.quaternary.opacity(0.7), in: Circle())
+                .contentShape(Circle())
+                .invalidatableContent()
         }
         .buttonStyle(.plain)
-        .disabled(isRefreshing)
         .accessibilityLabel("刷新额度")
-        .accessibilityValue(isRefreshing ? "正在刷新" : "空闲")
     }
 }
 
