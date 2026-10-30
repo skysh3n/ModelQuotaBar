@@ -53,6 +53,7 @@
 		C0FFEE02C0FFEE02C0FFEE02 /* WebLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE01C0FFEE01C0FFEE01 /* WebLoginSheet.swift */; };
 		C0FFEE04C0FFEE04C0FFEE04 /* InitialFocusSuppressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE03C0FFEE03C0FFEE03 /* InitialFocusSuppressor.swift */; };
 		RQI0001RQI0001RQI0001RQI /* RefreshQuotaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = RQI0000RQI0000RQI0000RQI /* RefreshQuotaIntent.swift */; };
+		RQI0002RQI0002RQI0002RQI /* RefreshQuotaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = RQI0000RQI0000RQI0000RQI /* RefreshQuotaIntent.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -394,6 +395,7 @@
 				7D540B781D4AFE876984F81A /* QwenTokenPlanRegion.swift in Sources */,
 				A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */,
 				C0850000C0850000C0850001 /* CursorProvider.swift in Sources */,
+				RQI0002RQI0002RQI0002RQI /* RefreshQuotaIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -469,7 +471,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = XY854963DK;
@@ -507,7 +509,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = XY854963DK;
@@ -544,7 +546,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = XY854963DK;
@@ -614,7 +616,7 @@
 				CODE_SIGN_ENTITLEMENTS = Widget/QuotaWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 34;
+				CURRENT_PROJECT_VERSION = 36;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = XY854963DK;

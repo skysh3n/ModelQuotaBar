@@ -2,9 +2,9 @@ import AppIntents
 import Foundation
 import WidgetKit
 
-/// WidgetKit 的 reload。主应用与扩展都会编译本文件；刷新按钮的 App Intent
-/// 单独放在 `Widget/RefreshQuotaIntent.swift`（只进扩展 target），避免双 target
-/// 时在主应用进程执行并弹出主窗口。
+/// WidgetKit 的 reload。主应用与扩展都会编译本文件。
+/// 刷新按钮的 `RefreshQuotaIntent` 在 `Widget/RefreshQuotaIntent.swift`，
+/// **App + Widget 双 target**（`openAppWhenRun = false`），否则 macOS 上按钮不可交互。
 enum WidgetReloader {
     static func reload() {
         // WidgetCenter 在扩展进程里可用。

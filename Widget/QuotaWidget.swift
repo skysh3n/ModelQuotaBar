@@ -136,24 +136,21 @@ struct QuotaWidgetEntryView: View {
     }
 }
 
-/// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
+/// 小组件里的刷新按钮。点一下抓最新数据并重绘。
 ///
-/// 点击区拉满右上角 `widgetRefreshClearance`（44×44），比可见圆更大，减少点空。
-/// 不用 `.plain`：macOS 上 plain 有时吃掉命中，点击落到小组件空白处反而会打开主应用。
-/// 无 `Link` / `widgetURL` / `openURL`——只绑扩展独占、**无参数**的 `RefreshQuotaIntent`。
-/// 也不用 `.invalidatableContent()`，避免加载态卡住成永久灰块。
+/// - Intent 必须 App+Widget 双 target，且无 `@Parameter`，否则 macOS 上常绑不上。
+/// - 不用 `.invalidatableContent()`（会卡成灰块占位）。
+/// - 不用自定义 `buttonStyle`：borderless/plain 在桌面小组件上容易丢掉 intent 命中。
+/// - 无 `Link` / `widgetURL` / `openURL`。
 private struct WidgetRefreshButton: View {
     var body: some View {
         Button(intent: RefreshQuotaIntent()) {
-            Image(systemName: "arrow.clockwise")
+            Label("刷新", systemImage: "arrow.clockwise")
+                .labelStyle(.iconOnly)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
-                .background(.quaternary.opacity(0.7), in: Circle())
                 .frame(width: widgetRefreshClearance, height: widgetRefreshClearance)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
         .accessibilityLabel("刷新额度")
     }
 }
@@ -460,5 +457,6 @@ struct QuotaWidget: Widget {
         .configurationDisplayName("大模型额度")
         .description("小尺寸显示一个来源，中尺寸并排显示多个。右键可勾选来源。")
         .supportedFamilies([.systemSmall, .systemMedium])
+        .contentMarginsDisabled()
     }
 }
