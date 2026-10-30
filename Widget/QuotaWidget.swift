@@ -128,11 +128,9 @@ struct QuotaWidgetEntryView: View {
             // 不用 `.invalidatableContent()`：intent 若被取消 / 误激活主应用，
             // 系统可能永久停在 redact（灰条标题、大方块、按钮里方块），看起来像占位图。
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // 数据区不抢点击，避免点到数字/进度条时落到「打开主应用」的默认手势。
-            .allowsHitTesting(false)
 
-            // AppIntent 交互不占小组件每日刷新预算。
-            WidgetRefreshButton(sources: entry.sources)
+            // AppIntent 交互不占小组件每日刷新预算。无参 intent，避免归档绑钮失败。
+            WidgetRefreshButton()
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -142,13 +140,11 @@ struct QuotaWidgetEntryView: View {
 ///
 /// 点击区拉满右上角 `widgetRefreshClearance`（44×44），比可见圆更大，减少点空。
 /// 不用 `.plain`：macOS 上 plain 有时吃掉命中，点击落到小组件空白处反而会打开主应用。
-/// 无 `Link` / `widgetURL` / `openURL`——只绑扩展独占的 `RefreshQuotaIntent`。
+/// 无 `Link` / `widgetURL` / `openURL`——只绑扩展独占、**无参数**的 `RefreshQuotaIntent`。
 /// 也不用 `.invalidatableContent()`，避免加载态卡住成永久灰块。
 private struct WidgetRefreshButton: View {
-    let sources: [WidgetSource]
-
     var body: some View {
-        Button(intent: RefreshQuotaIntent(sources: sources)) {
+        Button(intent: RefreshQuotaIntent()) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
