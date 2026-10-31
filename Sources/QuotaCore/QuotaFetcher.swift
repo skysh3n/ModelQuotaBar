@@ -8,9 +8,9 @@ public enum QuotaFetcher {
         let credential = CredentialStore.loadCredential(for: provider.id)
             .resolvingDefaults(for: provider.credentialFields)
         guard credential.isComplete(for: provider.credentialFields) else {
-            let names = provider.credentialFields
-                .filter { !$0.isOptional && credential[$0.id] == nil && $0.defaultValue == nil }
-                .map(\.title)
+            let names = missingCredentialNames(
+                for: provider.credentialFields,
+                credential: credential)
                 .joined(separator: "、")
             return (nil, .missingCredential(names))
         }
@@ -24,20 +24,46 @@ public enum QuotaFetcher {
         }
     }
 
+    /// 去重后的缺失必填字段名，用于「请先在设置中填写…」提示。
+    static func missingCredentialNames(
+        for fields: [CredentialField],
+        credential: ProviderCredential
+    ) -> [String] {
+        fields
+            .filter { !$0.isOptional && credential[$0.id] == nil && $0.defaultValue == nil }
+            .map(\.title)
+    }
+
     /// 抓所有**已配置凭据**的来源，直接产出小组件快照。
     public static func fetchAllWidgetSnapshots() async -> [WidgetSnapshot] {
         await fetchWidgetSnapshots(ids: nil)
     }
 
+    /// 小组件抓取来源的过滤策略：共享启用列表 + 凭据完整 + 当前勾选的 ids。
+    ///
+    /// 纯函数，便于单测；共享启用列表为 nil 时退回旧版本的「只看凭据」。
+    static func selectWidgetProviders(
+        ids: Set<String>?,
+        enabled: Set<String>?,
+        configured: Set<String>
+    ) -> [ProviderDescriptor] {
+        ProviderRegistry.all.filter { provider in
+            (enabled?.contains(provider.id.rawValue) ?? true)
+                && configured.contains(provider.id.rawValue)
+                && (ids == nil || ids!.contains(provider.id.rawValue))
+        }
+    }
+
     /// 抓小组件快照。`ids` 非空时只抓这些来源（未显示的供应商刷新时应忽略）。
     ///
-    /// 只看「容器里有没有凭据」，不看主应用的启用列表——小组件读不到主应用的
-    /// UserDefaults，而凭据在用户禁用来源时会被删掉，两者天然一致。
+    /// 同时看「共享启用列表」和「容器里有没有凭据」：主应用把启用列表写到共享目录，
+    /// 小组件据此判断哪些来源仍可用。共享列表不存在（旧版本）时退回只看凭据。
     public static func fetchWidgetSnapshots(ids: Set<String>?) async -> [WidgetSnapshot] {
-        let providers = ProviderRegistry.all.filter {
-            CredentialStore.loadCredential(for: $0.id).isComplete(for: $0.credentialFields)
-                && (ids == nil || ids!.contains($0.id.rawValue))
-        }
+        let enabled = SharedStore.loadEnabledProviderIDs().map(Set.init)
+        let configured = Set(ProviderRegistry.all
+            .filter { CredentialStore.loadCredential(for: $0.id).isComplete(for: $0.credentialFields) }
+            .map(\.id.rawValue))
+        let providers = selectWidgetProviders(ids: ids, enabled: enabled, configured: configured)
         guard !providers.isEmpty else { return [] }
 
         let fetched = await withTaskGroup(of: WidgetSnapshot?.self) { group in

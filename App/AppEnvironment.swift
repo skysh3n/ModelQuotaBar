@@ -17,7 +17,13 @@ final class AppEnvironment {
         store.onWidgetDataChanged = {
             WidgetCenter.shared.reloadAllTimelines()
         }
-        // 不在启动时自动刷新：只等用户点「刷新」（或改用来源后的 providersDidChange）。
+        // 有本地缓存就先出界面，不自动请求；只有完全没缓存（首次启动/缓存文件丢失）
+        // 才补拉一次，避免打开应用只看到一屏空卡片。
+        if !store.hasCachedData {
+            Task { @MainActor [weak self] in
+                await self?.refresh()
+            }
+        }
     }
 
     // MARK: - 刷新

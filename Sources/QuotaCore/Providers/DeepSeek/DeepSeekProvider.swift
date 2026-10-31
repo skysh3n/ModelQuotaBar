@@ -27,6 +27,14 @@ public enum DeepSeekProvider: QuotaProvider {
 
     private static let endpoint = URL(string: "https://api.deepseek.com/user/balance")!
     public static func fetchSnapshot(credential: ProviderCredential) async throws -> QuotaSnapshot {
+        try await fetchSnapshot(credential: credential, session: .shared)
+    }
+
+    /// 带 session 的版本供单测注入 URLProtocol；生产路径用 `.shared`。
+    static func fetchSnapshot(
+        credential: ProviderCredential,
+        session: URLSession
+    ) async throws -> QuotaSnapshot {
         guard let apiKey = credential["apiKey"] else {
             throw QuotaError.missingCredential("API Key")
         }
@@ -38,7 +46,7 @@ public enum DeepSeekProvider: QuotaProvider {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             throw QuotaError.network(error.localizedDescription)
         }

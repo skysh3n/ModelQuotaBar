@@ -89,7 +89,7 @@ enum JSONSearch {
         case let number as NSNumber:
             number.doubleValue.isFinite ? number.doubleValue : nil
         case let string as String:
-            Double(string.trimmingCharacters(in: .whitespaces))
+            Double(string.trimmingCharacters(in: .whitespaces)).flatMap { $0.isFinite ? $0 : nil }
         default:
             nil
         }

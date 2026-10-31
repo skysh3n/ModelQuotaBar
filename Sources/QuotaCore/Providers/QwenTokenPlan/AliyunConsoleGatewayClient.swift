@@ -92,7 +92,8 @@ struct AliyunConsoleGatewayClient: Sendable {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
 
-    private static func requestBody(
+    /// 表单请求体。internal 是为了让单测直接检查信封字段。
+    static func requestBody(
         api: String,
         region: QwenTokenPlanRegion
     ) throws -> Data {
@@ -133,12 +134,19 @@ struct AliyunConsoleGatewayClient: Sendable {
 
     /// 归一化用户粘贴的凭据。
     ///
-    /// 控制台里复制的往往只是 ticket 的**值**，而它的值本身不含 `=`，
-    /// 直接当作 Cookie 头发出去就没有 `name=value` 结构，网关一律判未登录——
-    /// 表现得和「会话过期」一模一样，极易误判。这里自动补上键名。
+    /// 控制台里复制的往往只是 ticket 的**值**。ticket 本身可能含 `=`（base64/padding），
+    /// 所以不能靠「有没有等号」判断是不是完整 Cookie 头；要看有没有
+    /// `login_aliyunid_ticket=` 这个键。否则裸值会被当成完整 Cookie 头发出去，
+    /// 网关判未登录，表现和会话过期一样。
     static func normalizedCookie(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.contains("=") {
+        let hasTicketPair = trimmed
+            .split(separator: ";", omittingEmptySubsequences: false)
+            .contains { pair in
+                let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first
+                return name?.trimmingCharacters(in: .whitespacesAndNewlines) == "login_aliyunid_ticket"
+            }
+        if hasTicketPair {
             return trimmed
         }
         return "login_aliyunid_ticket=\(trimmed)"
@@ -147,7 +155,8 @@ struct AliyunConsoleGatewayClient: Sendable {
     // MARK: - 错误判定
 
     /// 网关的业务失败是 `HTTP 200 + success=false`，不能用状态码判断，必须解析响应体。
-    private static func throwIfError(_ payload: Any) throws {
+    /// internal 是为了让单测覆盖错误分类，生产调用方仍只走 `call(api:)`。
+    static func throwIfError(_ payload: Any) throws {
         if let success = JSONSearch.findValue(forKeys: ["successResponse", "success_response"], in: payload),
            let flag = success as? Bool,
            flag == false

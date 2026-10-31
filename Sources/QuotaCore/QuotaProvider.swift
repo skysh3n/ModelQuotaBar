@@ -154,10 +154,15 @@ public struct ProviderMetadata: Sendable {
     public let summary: String
     /// 控制台地址，设置界面里的「打开」按钮指向它。
     public let consoleURL: URL?
+    /// 按当前凭据解析控制台地址。用于「站点」这类会改变控制台域名的来源；
+    /// 返回 nil 时退回 `consoleURL`。
+    public let consoleURLResolver: (@Sendable (ProviderCredential) -> URL?)?
     /// 控制台用量页的具体路径说明，帮助用户找到要复制的 Cookie / 密钥。
     public let consoleHint: String?
     /// 支持内嵌网页登录时给出规格，设置界面会多一个「登录获取」按钮。
     public let webLogin: WebLoginSpec?
+    /// 按当前凭据解析登录规格。用于登录域名随站点变化的来源；返回 nil 时退回 `webLogin`。
+    public let webLoginResolver: (@Sendable (ProviderCredential) -> WebLoginSpec?)?
 
     public init(
         id: ProviderID,
@@ -165,16 +170,30 @@ public struct ProviderMetadata: Sendable {
         plan: String,
         summary: String,
         consoleURL: URL? = nil,
+        consoleURLResolver: (@Sendable (ProviderCredential) -> URL?)? = nil,
         consoleHint: String? = nil,
-        webLogin: WebLoginSpec? = nil
+        webLogin: WebLoginSpec? = nil,
+        webLoginResolver: (@Sendable (ProviderCredential) -> WebLoginSpec?)? = nil
     ) {
         self.id = id
         self.vendor = vendor
         self.plan = plan
         self.summary = summary
         self.consoleURL = consoleURL
+        self.consoleURLResolver = consoleURLResolver
         self.consoleHint = consoleHint
         self.webLogin = webLogin
+        self.webLoginResolver = webLoginResolver
+    }
+
+    /// 当前凭据对应的控制台地址。
+    public func consoleURL(for credential: ProviderCredential) -> URL? {
+        consoleURLResolver?(credential) ?? consoleURL
+    }
+
+    /// 当前凭据对应的网页登录规格。
+    public func webLogin(for credential: ProviderCredential) -> WebLoginSpec? {
+        webLoginResolver?(credential) ?? webLogin
     }
 
     public var displayName: String { "\(vendor) \(plan)" }

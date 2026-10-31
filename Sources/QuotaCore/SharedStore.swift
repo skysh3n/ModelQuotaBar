@@ -20,6 +20,7 @@ public enum SharedStore {
 
     private static let subdirectory = "ModelQuotaBar"
     private static let snapshotFileName = "quota-snapshot.json"
+    private static let enabledFileName = "enabled-sources.json"
 
     public static var containerURL: URL? {
         let fileManager = FileManager.default
@@ -76,11 +77,43 @@ public enum SharedStore {
         return FileManager.default.isWritableFile(atPath: url.path)
     }
 
+    // MARK: - 已启用的来源
+
+    /// 主应用启用的来源列表。小组件读不到主应用的 UserDefaults，所以主应用把这份
+    /// 列表镜像到共享目录：它决定「哪些来源出现在勾选列表里、哪些会被抓取」。
+    ///
+    /// 返回 nil 表示文件不存在（旧版本/首次启动），调用方应退回「看凭据」的旧逻辑。
+    public static func loadEnabledProviderIDs() -> [String]? {
+        loadEnabledProviderIDs(from: url(for: enabledFileName))
+    }
+
+    static func loadEnabledProviderIDs(from url: URL?) -> [String]? {
+        guard let url,
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String].self, from: data)
+        else { return nil }
+        return decoded
+    }
+
+    public static func saveEnabledProviderIDs(_ ids: [String]) {
+        saveEnabledProviderIDs(ids, to: url(for: enabledFileName))
+    }
+
+    static func saveEnabledProviderIDs(_ ids: [String], to url: URL?) {
+        guard let url else { return }
+        guard let data = try? JSONEncoder().encode(ids) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
     // MARK: - 额度快照
 
     /// 写入快照，供小组件读取。
     public static func save(_ snapshots: [WidgetSnapshot]) {
-        guard let url = url(for: snapshotFileName) else { return }
+        save(snapshots, to: url(for: snapshotFileName))
+    }
+
+    static func save(_ snapshots: [WidgetSnapshot], to url: URL?) {
+        guard let url else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(snapshots) else { return }
@@ -90,7 +123,11 @@ public enum SharedStore {
 
     /// 读取快照。小组件侧调用。
     public static func loadSnapshots() -> [WidgetSnapshot] {
-        guard let url = url(for: snapshotFileName),
+        loadSnapshots(from: url(for: snapshotFileName))
+    }
+
+    static func loadSnapshots(from url: URL?) -> [WidgetSnapshot] {
+        guard let url,
               let data = try? Data(contentsOf: url)
         else { return [] }
         let decoder = JSONDecoder()
@@ -98,16 +135,41 @@ public enum SharedStore {
         return (try? decoder.decode([WidgetSnapshot].self, from: data)) ?? []
     }
 
-    /// 把新抓到的快照盖到缓存上再写入。只刷新部分来源时用，避免把没抓的供应商冲掉。
-    public static func saveMerging(_ fresh: [WidgetSnapshot]) {
-        guard !fresh.isEmpty else { return }
-        save(mergeSnapshots(cached: loadSnapshots(), fresh: fresh))
+    /// 把新抓到的快照盖到缓存上再写入。
+    ///
+    /// - Parameter keepIDs: 当前仍可用（已启用且凭据完整）的来源。缓存里不再可用的
+    ///   来源会被丢弃；如果列表为空，连缓存一起清空——否则停用/清空凭据后小组件
+    ///   会一直显示旧数据。
+    @discardableResult
+    public static func saveMerging(
+        _ fresh: [WidgetSnapshot],
+        keeping keepIDs: Set<String>
+    ) -> [WidgetSnapshot] {
+        let merged = mergeSnapshots(cached: loadSnapshots(), fresh: fresh, keeping: keepIDs)
+        save(merged)
+        return merged
+    }
+
+    /// 合并时先按 `keepIDs` 过滤缓存和新数据；不再可用的来源不会留下来。
+    static func mergeSnapshots(
+        cached: [WidgetSnapshot],
+        fresh: [WidgetSnapshot],
+        keeping keepIDs: Set<String>
+    ) -> [WidgetSnapshot] {
+        mergeSnapshots(
+            cached: cached.filter { keepIDs.contains($0.id) },
+            fresh: fresh.filter { keepIDs.contains($0.id) })
     }
 
     /// 成功的用新值盖上去，失败的保留缓存。顺序跟 ProviderRegistry 一致。
     public static func mergeSnapshots(cached: [WidgetSnapshot], fresh: [WidgetSnapshot]) -> [WidgetSnapshot] {
         guard !fresh.isEmpty else { return cached }
-        var byID = Dictionary(uniqueKeysWithValues: cached.map { ($0.id, $0) })
+        // 不用 Dictionary(uniqueKeysWithValues:)：损坏/手改过的缓存里若有重复 id，
+        // 那个构造器会直接 trap。
+        var byID: [String: WidgetSnapshot] = [:]
+        for snapshot in cached {
+            byID[snapshot.id] = snapshot
+        }
         for snapshot in fresh {
             byID[snapshot.id] = snapshot
         }
@@ -115,6 +177,18 @@ public enum SharedStore {
         let ordered = order.compactMap { byID[$0] }
         let extras = byID.values.filter { entry in !order.contains(entry.id) }
         return ordered + extras
+    }
+
+    /// 两个快照数组的内容是否一致。忽略 `updatedAt`：每次抓取都会产生新时间，
+    /// 用整个结构比较会让「内容没变就不重载小组件」的优化永远失效。
+    public static func snapshotsHaveSameContent(
+        _ lhs: [WidgetSnapshot],
+        _ rhs: [WidgetSnapshot]
+    ) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            left.id == right.id && left.hasSameContent(as: right)
+        }
     }
 
 }
@@ -182,6 +256,21 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     /// 是否为纯余额型来源（没有时间窗口，只有钱）。
     public var isBalanceOnly: Bool {
         primaryRemainingRatio == nil && balanceRemaining != nil
+    }
+
+    /// 除 `updatedAt` 外内容是否相同。
+    public func hasSameContent(as other: WidgetSnapshot) -> Bool {
+        id == other.id
+            && vendor == other.vendor
+            && title == other.title
+            && planName == other.planName
+            && primaryTitle == other.primaryTitle
+            && primaryRemainingRatio == other.primaryRemainingRatio
+            && primaryResetsAt == other.primaryResetsAt
+            && balanceRemaining == other.balanceRemaining
+            && balanceUnit == other.balanceUnit
+            && secondaryWindows == other.secondaryWindows
+            && remainingDays == other.remainingDays
     }
 }
 

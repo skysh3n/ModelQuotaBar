@@ -11,20 +11,41 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         plan: "Token Plan",
         summary: "查询百炼 Token Plan 个人版的 5 小时 / 每周 / 每月额度用量与剩余 Credits。",
         consoleURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
+        consoleURLResolver: { QwenTokenPlanProvider.region(for: $0).consoleURL },
         consoleHint:
             "两种获取方式任选其一：\n" +
             "①「登录获取」——在弹窗里登录一次即可，会话过期后再点一次重新获取；\n" +
-            "② 手动——控制台 F12 → Network → 任一发往 bailian-cs.console.aliyun.com 的请求，" +
+            "② 手动——控制台 F12 → Network → 任一发往当前站点控制台网关的请求，" +
             "复制 Request Headers 里 login_aliyunid_ticket 的值。",
-        webLogin: WebLoginSpec(
+        webLogin: QwenTokenPlanProvider.webLoginSpec(for: .chinaMainland),
+        webLoginResolver: {
+            QwenTokenPlanProvider.webLoginSpec(for: QwenTokenPlanProvider.region(for: $0))
+        })
+
+    /// 当前凭据选择的站点。缺省为中国大陆站。
+    static func region(for credential: ProviderCredential) -> QwenTokenPlanRegion {
+        credential["region"].flatMap(QwenTokenPlanRegion.init(rawValue:))
+            ?? .chinaMainland
+    }
+
+    /// 内嵌登录规格。登录域名必须跟站点一起切换：中国站是 account.aliyun.com，
+    /// 国际站是 account.alibabacloud.com；否则国际站会拿到一张中国站的票。
+    static func webLoginSpec(for region: QwenTokenPlanRegion) -> WebLoginSpec {
+        let loginURL: URL = switch region {
+        case .chinaMainland:
+            URL(string: "https://account.aliyun.com/login/login.htm")!
+        case .international:
+            URL(string: "https://account.alibabacloud.com/login/login.htm")!
+        }
+        return WebLoginSpec(
             // 直接打开登录页，用户点「登录获取」就能看到登录表单。
-            url: URL(string: "https://account.aliyun.com/login/login.htm")!,
+            url: loginURL,
             // 登录成功后要落回控制台，login_aliyunid_ticket 是这一步才下发的。
-            postLoginURL: QwenTokenPlanRegion.chinaMainland.consoleURL,
+            postLoginURL: region.consoleURL,
             cookieName: "login_aliyunid_ticket",
             targetFieldID: "cookie",
-            hint: "在弹出的窗口里登录百炼控制台。登录成功后 App 会自动取到会话凭据。")
-    )
+            hint: "在弹出的窗口里登录\(region.displayName)的百炼控制台。登录成功后 App 会自动取到会话凭据。")
+    }
 
     public static let credentialFields: [CredentialField] = [
         CredentialField(
@@ -48,8 +69,7 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         guard let cookie = credential["cookie"] else {
             throw QuotaError.missingCredential("控制台会话 Cookie")
         }
-        let region = credential["region"].flatMap(QwenTokenPlanRegion.init(rawValue:))
-            ?? .chinaMainland
+        let region = Self.region(for: credential)
 
         let client = AliyunConsoleGatewayClient(region: region, cookieHeader: cookie)
 

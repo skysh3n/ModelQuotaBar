@@ -21,6 +21,9 @@ struct ProviderSettingsCard: View {
     private var metadata: ProviderMetadata { provider.metadata }
     private var providerID: ProviderID { metadata.id }
     private var isEnabled: Bool { environment.settings.isEnabled(providerID) }
+    /// 登录/控制台地址随当前站点（credential 里的 region）变化。
+    private var webLoginSpec: WebLoginSpec? { metadata.webLogin(for: credential) }
+    private var consoleURL: URL? { metadata.consoleURL(for: credential) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,6 +69,7 @@ struct ProviderSettingsCard: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .accessibilityLabel("启用 \(metadata.displayName)")
         }
     }
 
@@ -86,11 +90,13 @@ struct ProviderSettingsCard: View {
             labeled(field) {
                 TextField("", text: valueBinding(for: field.id))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(field.title)
             }
         case .secret:
             labeled(field) {
                 SecureField("", text: valueBinding(for: field.id))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(field.title)
             }
         case let .picker(options):
             labeled(field) {
@@ -101,6 +107,7 @@ struct ProviderSettingsCard: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: 220, alignment: .leading)
+                .accessibilityLabel(field.title)
             }
         }
     }
@@ -167,20 +174,21 @@ struct ProviderSettingsCard: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                if metadata.webLogin != nil {
+                if webLoginSpec != nil {
                     Button("登录获取") { isShowingWebLogin = true }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("测试连接") { runTest() }
                     .disabled(testState == .testing)
-                if let url = metadata.consoleURL {
+                if let url = consoleURL {
                     Link("打开控制台", destination: url)
                         .font(.callout)
                 }
                 Spacer()
             }
             .sheet(isPresented: $isShowingWebLogin) {
-                if let spec = metadata.webLogin {
+                // 打开弹窗后站点不再变化；spec 取当前 credential 的站点。
+                if let spec = webLoginSpec {
                     WebLoginSheet(
                         spec: spec,
                         onCaptured: { value in
@@ -233,7 +241,8 @@ struct ProviderSettingsCard: View {
         }
     }
 
-    private func runTest() {        testState = .testing
+    private func runTest() {
+        testState = .testing
         Task {
             do {
                 let snapshot = try await provider.fetchSnapshot(credential: credential)

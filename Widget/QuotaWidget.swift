@@ -8,9 +8,23 @@ struct QuotaEntry: TimelineEntry {
     let date: Date
     let allSnapshots: [WidgetSnapshot]
     let sources: [WidgetSource]
+    /// 组件库预览用的占位数据，不套「可用来源」过滤（新用户可能还没配凭据）。
+    let isPlaceholder: Bool
+
+    init(
+        date: Date,
+        allSnapshots: [WidgetSnapshot],
+        sources: [WidgetSource],
+        isPlaceholder: Bool = false
+    ) {
+        self.date = date
+        self.allSnapshots = allSnapshots
+        self.sources = sources
+        self.isPlaceholder = isPlaceholder
+    }
 
     var selectedSnapshots: [WidgetSnapshot] {
-        WidgetSource.select(sources, from: allSnapshots)
+        isPlaceholder ? allSnapshots : WidgetSource.select(sources, from: allSnapshots)
     }
 }
 
@@ -20,12 +34,15 @@ extension QuotaEntry {
             date: Date(),
             allSnapshots: [
                 WidgetSnapshot(
-                    id: "qwen", vendor: "通义千问", title: "通义千问 Token Plan",
+                    id: "qwen-token-plan", vendor: "通义千问", title: "通义千问 Token Plan",
                     planName: "Pro 专业版",
                     primaryTitle: "每月", primaryRemainingRatio: 0.725,
                     primaryResetsAt: Date().addingTimeInterval(12 * 86_400),
                     balanceRemaining: nil, balanceUnit: nil,
-                    secondaryWindows: [], remainingDays: 29, updatedAt: Date()),
+                    secondaryWindows: [
+                        WidgetWindow(id: "weekly", title: "每周", remainingRatio: 0.62, resetsAt: nil),
+                    ],
+                    remainingDays: 29, updatedAt: Date()),
                 WidgetSnapshot(
                     id: "deepseek", vendor: "DeepSeek", title: "DeepSeek API 余额",
                     planName: nil,
@@ -34,7 +51,8 @@ extension QuotaEntry {
                     balanceRemaining: 110.0, balanceUnit: "CNY",
                     secondaryWindows: [], remainingDays: nil, updatedAt: Date()),
             ],
-            sources: [.qwen, .deepseek])
+            sources: [.qwen, .deepseek],
+            isPlaceholder: true)
     }
 }
 
@@ -43,14 +61,16 @@ private func cachedQuotaEntry(sources: [WidgetSource]) -> QuotaEntry {
     QuotaEntry(date: Date(), allSnapshots: SharedStore.loadSnapshots(), sources: sources)
 }
 
-/// 只抓当前勾选的来源；结果盖到缓存上，未显示的供应商原样保留。
+/// 只抓当前勾选的来源；结果盖到缓存上。
+///
+/// `keeping` 是当前仍可用（已启用 + 凭据完整）的来源：停用/清空凭据的来源会从
+/// 缓存里清掉，全都没有时缓存也会被清空，不会永远显示旧数据。
 private func refreshSelectedSources(_ sources: [WidgetSource]) async -> [WidgetSnapshot] {
-    let ids = Set(WidgetSource.effectiveDisplaySources(sources).map(\.rawValue))
+    let available = WidgetSource.availableSources()
+    let availableIDs = Set(available.map(\.rawValue))
+    let ids = Set(WidgetSource.effectiveDisplaySources(sources, available: available).map(\.rawValue))
     let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
-    guard !fresh.isEmpty else { return SharedStore.loadSnapshots() }
-    let merged = SharedStore.mergeSnapshots(cached: SharedStore.loadSnapshots(), fresh: fresh)
-    SharedStore.save(merged)
-    return merged
+    return SharedStore.saveMerging(fresh, keeping: availableIDs)
 }
 
 /// 请求系统约 15 分钟后再刷（实际节奏由系统决定）。
@@ -83,7 +103,7 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
                 let before = cached
                 Task {
                     let merged = await refreshSelectedSources(sources)
-                    if merged != before {
+                    if !SharedStore.snapshotsHaveSameContent(merged, before) {
                         WidgetReloader.reload()
                     }
                 }
@@ -166,7 +186,7 @@ struct SmallWidgetView: View {
             WidgetSourceHeader(snapshot: snapshot)
             Spacer(minLength: 0)
             if let ratio = snapshot.primaryRemainingRatio {
-                Text(String(format: "%.1f%%", ratio * 100))
+                Text(widgetPercent(ratio))
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
@@ -176,6 +196,11 @@ struct SmallWidgetView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 WidgetProgressBar(remainingRatio: ratio)
+                Text(widgetUsageFooter(snapshot))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
                 if let credits = widgetCreditsText(snapshot) {
                     Text(credits)
@@ -215,6 +240,39 @@ private func widgetCreditsText(_ snapshot: WidgetSnapshot) -> String? {
           let balance = snapshot.balanceRemaining
     else { return nil }
     return "\(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? "")) 剩余"
+}
+
+/// 其余窗口压成一行，例如「每周 72.5% · 每月 80.0%」。
+private func widgetSecondaryText(_ snapshot: WidgetSnapshot) -> String? {
+    guard !snapshot.secondaryWindows.isEmpty else { return nil }
+    return snapshot.secondaryWindows
+        .map { "\($0.title) \(widgetPercent($0.remainingRatio))" }
+        .joined(separator: " · ")
+}
+
+/// 用量型底栏：套餐剩余天数 / 重置时间 / 更新时间。信息按需拼接，不占太多行。
+private func widgetUsageFooter(_ snapshot: WidgetSnapshot) -> String {
+    var parts: [String] = []
+    if let days = snapshot.remainingDays {
+        parts.append("套餐剩 \(days) 天")
+    }
+    if let reset = snapshot.primaryResetsAt, let text = widgetResetText(reset) {
+        parts.append(text)
+    }
+    parts.append(widgetTimeText(snapshot.updatedAt))
+    return parts.joined(separator: " · ")
+}
+
+private func widgetPercent(_ ratio: Double) -> String {
+    String(format: "%.1f%%", ratio * 100)
+}
+
+private func widgetResetText(_ date: Date, now: Date = Date()) -> String? {
+    guard date > now else { return "即将重置" }
+    let formatter = RelativeDateTimeFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: now) + "重置"
 }
 
 /// 小组件里的更新时间文案，如「14:20 更新」。
@@ -294,7 +352,7 @@ private struct WidgetSourceHeader: View {
 }
 
 /// 一个来源一栏（多栏时拉满高度，底栏与右侧「$x.xx 剩余」对齐）。
-/// Cursor：上半百分比+进度条，底下 Credits；
+/// Cursor：上半百分比+进度条，底下 Credits + 重置/更新时间；
 /// DeepSeek：中间放大余额，底下「账户余额 + 更新」紧挨的两行小字。
 private struct SourceColumn: View {
     let snapshot: WidgetSnapshot
@@ -351,13 +409,13 @@ private struct SourceColumn: View {
         }
     }
 
-    /// 标题(+徽章) → 百分比 + 每周剩余 + 进度条 → Credits 压底。
+    /// 标题(+徽章) → 百分比 + 周期剩余 + 进度条 → 其余窗口 → Credits/底栏。
     private var usageColumn: some View {
         VStack(alignment: .leading, spacing: 5) {
             WidgetSourceHeader(snapshot: snapshot)
 
             if let ratio = snapshot.primaryRemainingRatio {
-                Text(String(format: "%.1f%%", ratio * 100))
+                Text(widgetPercent(ratio))
                     .font(.system(size: valueSize, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.5)
@@ -375,6 +433,14 @@ private struct SourceColumn: View {
                     .frame(height: barHeight)
             }
 
+            if let secondary = widgetSecondaryText(snapshot) {
+                Text(secondary)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
             Spacer(minLength: 0)
 
             // 底栏 Credits 提高布局优先级，避免中尺寸双栏高度吃紧时被 Spacer 挤没。
@@ -387,6 +453,12 @@ private struct SourceColumn: View {
                     .minimumScaleFactor(0.7)
                     .layoutPriority(1)
             }
+
+            Text(widgetUsageFooter(snapshot))
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
         }
     }
 }

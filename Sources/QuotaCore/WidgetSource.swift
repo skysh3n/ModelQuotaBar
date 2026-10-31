@@ -10,9 +10,9 @@ import WidgetKit
 struct RefreshQuotaIntent: AppIntent {
     static let title: LocalizedStringResource = "刷新额度"
     /// 必须为 false：否则系统会为了跑 intent 激活/打开主应用，桌面小组件点刷新就会弹主界面。
-    static var openAppWhenRun: Bool = false
+    static var openAppWhenRun: Bool { false }
 
-    /// 当前小组件勾选的来源。没带时退回全部，兼容旧按钮。
+    /// 当前小组件勾选的来源。没带时退回默认的三个。
     @Parameter(title: "显示来源", default: [.qwen, .deepseek, .cursor])
     var sources: [WidgetSource]
 
@@ -24,9 +24,11 @@ struct RefreshQuotaIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let ids = Set(WidgetSource.effectiveDisplaySources(sources).map(\.rawValue))
+        let available = WidgetSource.availableSources()
+        let ids = Set(WidgetSource.effectiveDisplaySources(sources, available: available).map(\.rawValue))
         let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
-        SharedStore.saveMerging(fresh)
+        // 只保留仍可用（已启用 + 凭据完整）的来源；一个都没有时连缓存一起清掉。
+        SharedStore.saveMerging(fresh, keeping: Set(available.map(\.rawValue)))
         WidgetReloader.reload()
         return .result()
     }
@@ -78,51 +80,49 @@ enum WidgetSource: String, Codable, CaseIterable, AppEnum {
         snapshot.id == rawValue
     }
 
-    /// 接入 Cursor 之前，小组件默认只勾了千问和 DeepSeek。
-    /// 系统不会把新的默认值写回已经放在桌面上的小组件，这里按这个旧组合识别出来，补上新来源。
-    static let legacyDefault: [WidgetSource] = [.qwen, .deepseek]
-
     /// 主界面已启用且填好凭据的来源。
     ///
-    /// 关掉供应商时会删掉凭据，所以「有完整凭据」≈「主界面开着」。
-    /// 小组件勾选列表只展示这些，关掉的不会出现。
+    /// 启用列表由主应用镜像到共享目录；共享文件不存在（旧版本）时退回「看凭据」。
+    /// 两个条件都满足才可用：启用但没填凭据的抓不到数据，有凭据但被关掉的也不该出现。
     static func availableSources() -> [WidgetSource] {
+        let enabled = SharedStore.loadEnabledProviderIDs().map(Set.init)
+        let configured = Set(ProviderRegistry.all
+            .filter { CredentialStore.loadCredential(for: $0.id).isComplete(for: $0.credentialFields) }
+            .map(\.id.rawValue))
+        return availableSources(enabled: enabled, configured: configured)
+    }
+
+    /// 纯函数，便于测试。
+    static func availableSources(
+        enabled: Set<String>?,
+        configured: Set<String>
+    ) -> [WidgetSource] {
         allCases.filter { source in
-            guard let provider = ProviderRegistry.descriptor(for: ProviderID(source.rawValue)) else {
-                return false
+            guard configured.contains(source.rawValue) else { return false }
+            if let enabled {
+                return enabled.contains(source.rawValue)
             }
-            return CredentialStore.loadCredential(for: provider.id)
-                .isComplete(for: provider.credentialFields)
+            return true
         }
     }
 
-    /// 勾选列表归一化：升级前的默认勾选补上新来源；空列表视为全部；
-    /// 再去掉主界面已关掉的，避免刷新还去请求它们。
-    static func effectiveDisplaySources(_ sources: [WidgetSource]) -> [WidgetSource] {
-        effectiveDisplaySources(sources, available: availableSources())
-    }
-
-    /// - Parameter available: 传入时按这份列表过滤；空数组表示「不过滤」（测试 / 尚未配置）。
+    /// 勾选列表过滤：只保留仍可用的来源。
+    ///
+    /// 不会再把「勾选为空 / 勾选来源都不可用」兜底成全部来源——那会让用户
+    /// 取消勾选后反而看到所有来源，也让「只勾千问+DeepSeek」永远藏不掉 Cursor。
+    /// 没有可用来源时界面显示空状态，由用户去配置。
     static func effectiveDisplaySources(
         _ sources: [WidgetSource],
         available: [WidgetSource]
     ) -> [WidgetSource] {
-        let requested: [WidgetSource]
-        if sources == legacyDefault || sources.isEmpty {
-            requested = Array(allCases)
-        } else {
-            requested = sources
-        }
-        guard !available.isEmpty else { return requested }
-        let filtered = requested.filter { available.contains($0) }
-        return filtered.isEmpty ? available : filtered
+        sources.filter { available.contains($0) }
     }
 
-    /// 按勾选的来源过滤快照，保持快照本来的顺序。
-    ///
-    /// 勾选的来源一个都没取到数据时，退回全部：
-    /// 比如只配置了 Cursor、但小组件还是默认勾选，不能因此显示空白。
-    static func select(_ sources: [WidgetSource], from snapshots: [WidgetSnapshot]) -> [WidgetSnapshot] {
+    /// 按勾选的来源过滤快照，保持快照本来的顺序。选中的来源没数据时不拿别的来源顶替。
+    static func select(
+        _ sources: [WidgetSource],
+        from snapshots: [WidgetSnapshot]
+    ) -> [WidgetSnapshot] {
         select(sources, from: snapshots, available: availableSources())
     }
 
@@ -132,28 +132,30 @@ enum WidgetSource: String, Codable, CaseIterable, AppEnum {
         available: [WidgetSource]
     ) -> [WidgetSnapshot] {
         let effective = effectiveDisplaySources(sources, available: available)
-        let selected = snapshots.filter { snapshot in
+        return snapshots.filter { snapshot in
             effective.contains { $0.matches(snapshot) }
         }
-        return selected.isEmpty ? snapshots : selected
     }
 
     /// 缓存是否已经旧到值得再抓一次。尺寸切换会重跑 timeline，这里用来跳过无谓的网络请求。
+    ///
+    /// 没有可用来源时返回 false：没有东西可抓，别白跑一轮。
     static func needsRefresh(
         _ snapshots: [WidgetSnapshot],
         sources: [WidgetSource],
         now: Date = Date(),
         maxAge: TimeInterval = 14 * 60,
-        available: [WidgetSource] = []
+        available: [WidgetSource]
     ) -> Bool {
-        // 默认 available 为空 = 不过滤，避免单测读到本机凭据；生产路径显式传入。
-        let pool = available
-        let effective = effectiveDisplaySources(sources, available: pool)
-        let selected = select(sources, from: snapshots, available: pool)
+        let effective = effectiveDisplaySources(sources, available: available)
+        guard !effective.isEmpty else { return false }
+
         let missing = effective.contains { source in
             !snapshots.contains { source.matches($0) }
         }
         if missing { return true }
+
+        let selected = select(sources, from: snapshots, available: available)
         guard let oldest = selected.map(\.updatedAt).min() else { return true }
         return now.timeIntervalSince(oldest) > maxAge
     }
@@ -173,10 +175,10 @@ struct AvailableWidgetSourcesProvider: DynamicOptionsProvider {
 /// 配置项绑定在「小组件类型」上、拿不到尺寸信息，所以做不到「小尺寸单选、中尺寸多选」
 /// 那种随尺寸变化的选项（试过拆成两个小组件类型，但组件库是按 App 分组的，
 /// 拆开也看不出来，反而多一层）。统一用一个多选列表：
-/// 小尺寸取勾选里的第一个，中尺寸并列显示全部勾选的。
+/// 小尺寸取勾选里的第一个，中尺寸并列显示全部勾选的；全部取消则显示空状态。
 struct SelectSourcesIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "选择来源"
-    static let description = IntentDescription("小尺寸显示勾选的第一个来源，中尺寸并排显示全部勾选的来源。")
+    static let description = IntentDescription("小尺寸显示勾选的第一个来源，中尺寸并排显示全部勾选的来源；全部取消勾选时显示空状态。")
 
     @Parameter(
         title: "显示来源",
