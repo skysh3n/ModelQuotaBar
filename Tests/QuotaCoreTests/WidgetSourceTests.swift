@@ -8,12 +8,14 @@ enum WidgetSourceTests {
         ("Cursor 只匹配 Cursor", testCursorMatchesOnlyCursor),
         ("多选来源取并集且保持原顺序", testMultiSelectKeepsOrder),
         ("只勾一个时只留一个", testSingleSelection),
-        ("一个都没勾时退回全部", testEmptySelectionFallsBackToAll),
-        ("勾选的来源都没数据时退回全部", testNoMatchFallsBackToAll),
-        ("升级前的默认勾选会带上新增来源", testLegacyDefaultIncludesNewSources),
+        ("一个都没勾时显示空", testEmptySelectionShowsNothing),
+        ("勾选的来源都没数据时显示空", testNoMatchShowsNothing),
+        ("千问+DeepSeek 的勾选不会自动加回 Cursor", testLegacyPairDoesNotAddCursor),
         ("每个来源都对应一个已注册的 Provider", testSourcesMatchRegistry),
+        ("启用列表和凭据共同决定可用来源", testAvailableSourcesHonorsEnabledList),
         ("缓存够新时切换尺寸不必再抓", testNeedsRefreshSkipsFreshCache),
         ("缺勾选来源或过旧时才需要刷新", testNeedsRefreshWhenMissingOrStale),
+        ("没有可用来源时不刷新", testNeedsRefreshSkipsWhenNothingAvailable),
         ("主界面关掉的来源不进有效勾选", testEffectiveSourcesDropsUnavailable),
     ])
 
@@ -72,21 +74,20 @@ enum WidgetSourceTests {
         try Expect.equal(select([.cursor]), ["cursor"])
     }
 
-    static func testEmptySelectionFallsBackToAll() throws {
-        try Expect.equal(select([]), ["qwen-token-plan", "deepseek", "cursor"])
+    static func testEmptySelectionShowsNothing() throws {
+        // 全部取消勾选就是空状态，不再兜底成全部来源。
+        try Expect.equal(select([]), [])
     }
 
-    static func testNoMatchFallsBackToAll() throws {
-        // 只配置了 Cursor，但小组件勾的是千问和 DeepSeek：不能显示空白。
-        try Expect.equal(select([.qwen, .deepseek], from: [cursor]), ["cursor"])
+    static func testNoMatchShowsNothing() throws {
+        // 勾选的来源没数据时不拿别的来源顶替。
+        try Expect.equal(select([.qwen, .deepseek], from: [cursor]), [])
         try Expect.equal(select([.qwen], from: []), [])
     }
 
-    static func testLegacyDefaultIncludesNewSources() throws {
-        try Expect.equal(
-            select(WidgetSource.legacyDefault),
-            ["qwen-token-plan", "deepseek", "cursor"])
-        // 用户只留千问时不要把 Cursor 加回来。
+    static func testLegacyPairDoesNotAddCursor() throws {
+        // 用户可能是从旧版本升上来的，只勾了千问+DeepSeek；不能再把 Cursor 塞回来。
+        try Expect.equal(select([.qwen, .deepseek]), ["qwen-token-plan", "deepseek"])
         try Expect.equal(select([.qwen]), ["qwen-token-plan"])
     }
 
@@ -97,9 +98,29 @@ enum WidgetSourceTests {
         }
     }
 
+    static func testAvailableSourcesHonorsEnabledList() throws {
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor"]
+        try Expect.equal(
+            WidgetSource.availableSources(
+                enabled: ["qwen-token-plan", "deepseek"],
+                configured: configured),
+            [.qwen, .deepseek])
+        // 旧版本没有共享启用列表时退回凭据。
+        try Expect.equal(
+            WidgetSource.availableSources(enabled: nil, configured: ["cursor"]),
+            [.cursor])
+        // 启用列表为空 = 全关掉。
+        try Expect.equal(
+            WidgetSource.availableSources(enabled: [], configured: configured),
+            [])
+        // 启用但没凭据的也不能用。
+        try Expect.equal(
+            WidgetSource.availableSources(enabled: ["cursor"], configured: ["qwen-token-plan"]),
+            [])
+    }
+
     static func testNeedsRefreshSkipsFreshCache() throws {
         let now = Date()
-        // 不能用 [.qwen, .deepseek]：那是升级前的默认勾选，会被扩成全部来源。
         let fresh = [
             WidgetSnapshot(
                 id: "qwen-token-plan", vendor: "通义千问", planName: nil,
@@ -135,21 +156,27 @@ enum WidgetSourceTests {
             stale, sources: [.qwen], now: now, available: [.qwen]))
     }
 
+    static func testNeedsRefreshSkipsWhenNothingAvailable() throws {
+        let now = Date()
+        try Expect.isTrue(!WidgetSource.needsRefresh(
+            [], sources: [.qwen], now: now, available: []))
+    }
+
     static func testEffectiveSourcesDropsUnavailable() throws {
         try Expect.equal(
             WidgetSource.effectiveDisplaySources(
                 [.qwen, .deepseek, .cursor],
                 available: [.cursor]),
             [.cursor])
-        // 升级前的默认勾选也会被裁成当前仍启用的。
+        // 勾选的来源都不可用时返回空，不拿别的来源顶替。
         try Expect.equal(
             WidgetSource.effectiveDisplaySources(
-                WidgetSource.legacyDefault,
+                [.qwen, .deepseek],
                 available: [.cursor]),
-            [.cursor])
-        // 可用列表为空时不过滤（测试 / 尚未配置）。
+            [])
+        // available 为空表示没有可用来源，同样返回空。
         try Expect.equal(
             WidgetSource.effectiveDisplaySources([.qwen], available: []),
-            [.qwen])
+            [])
     }
 }
