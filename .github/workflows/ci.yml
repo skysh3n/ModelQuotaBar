@@ -22,6 +22,10 @@ jobs:
       - name: 运行单元测试
         run: ./scripts/test.sh
 
+      # 确保 Package.swift 本身也能构建（Xcode 工程不经过它，容易漏掉语言模式问题）。
+      - name: 编译 QuotaCore 包清单
+        run: swift build
+
       - name: 编译应用与小组件扩展
         run: NO_SIGN=1 ./scripts/build.sh
 

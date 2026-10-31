@@ -90,6 +90,17 @@ if [ -n "${NO_SIGN:-}" ]; then
   exit 0
 fi
 
+# FileProvider 可能在 xattr -cr 之后又把 FinderInfo/FileProvider 属性加回来。
+# 这时 dist 产物的签名校验会失败；安装命令需要补一次 xattr -cr。
+if ! codesign --verify --deep --strict "$DIST/$APP_BUNDLE_NAME" >/dev/null 2>&1; then
+  echo
+  echo "注意：dist/ 产物的签名校验未通过（通常是 iCloud FileProvider 重新附加了扩展属性）。"
+  echo "安装时请拷贝后再清理一次属性："
+  echo "  cp -R \"$DIST/$APP_BUNDLE_NAME\" /Applications/"
+  echo "  xattr -cr \"/Applications/$APP_BUNDLE_NAME\""
+  echo "也可以直接从构建目录安装：$BUILT"
+fi
+
 echo
 echo "构建完成：$DIST/$APP_BUNDLE_NAME"
-echo "安装：cp -R \"$DIST/$APP_BUNDLE_NAME\" /Applications/"
+echo "安装：cp -R \"$DIST/$APP_BUNDLE_NAME\" /Applications/ && xattr -cr \"/Applications/$APP_BUNDLE_NAME\""
