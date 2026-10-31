@@ -15,16 +15,19 @@ macOS 应用 + 桌面小组件，查询大模型额度（通义千问 Token Plan
 # 构建与测试
 
 - 测试：`./scripts/test.sh`（不用 `swift test`，测试执行器在 `Tests/QuotaCoreTests/TestSupport.swift`）。
+- 包清单自检：`swift build`。`Package.swift` 的 target 固定在 Swift 5 语言模式，和 Xcode 工程的 `SWIFT_VERSION = 5.0` 对齐。
 - 构建：`./scripts/build.sh`，只验证编译用 `NO_SIGN=1 ./scripts/build.sh`。产物在 `dist/`。
 - 构建目录必须放仓库外（默认 `~/Library/Caches/ModelQuotaBar/`）：仓库在 iCloud 同步的桌面，FileProvider 扩展属性会让 codesign 失败。
 - 在 Cursor 沙盒里编译会因 `swift-plugin-server` 被拦而报 `@Observable` 宏找不到，需在沙盒外执行。
-- 签名失败多半是钥匙串锁了（屏幕锁定），解锁后重试。
+- 签名失败多半是钥匙串锁了（屏幕锁定），解锁后重试。工程里不写死 Team ID，按 README 在 Xcode 里选一次或传 `TEAM_ID=`。
 
 # 设计约束（改动前先确认不违反）
 
 - **不用钥匙串存凭据**：本地构建签名每次变化，会反复弹密码框。凭据存共享容器里的 `credentials.json`（0600）。
 - **不用 App Group**：共享目录是小组件的沙盒容器，主应用直接往里写，见 `SharedStore`。改小组件 bundle ID 必须同步 `SharedStore.widgetBundleIdentifier`。
-- **不做定时轮询**：主应用只在打开时刷新一次，之后手动刷新；小组件自己抓数据，由系统调度。
+- **启用状态是单一真相**：主应用把 `enabledProviderIDs` 镜像到共享目录的 `enabled-sources.json`；小组件用它 + 凭据决定可选来源。**停用来源不删凭据**，重新启用不用重新登录。
+- **不做定时轮询**：主应用有本地缓存时启动只显示缓存，不自动请求；缓存为空才补拉一次，之后手动刷新（启用来源时会跟一次）。小组件自己抓数据，由系统调度。
+- **小组件勾选不做兜底**：勾选的来源都不可用/没数据时显示空状态，不自动拿别的来源顶替，也不把「千问 + DeepSeek」当成旧默认值扩成三个来源。
 - **不引入需要额外系统授权的机制**（完全磁盘访问、读浏览器 Cookie 等）。
-- 千问会话**不会自动续期**，过期后重新「登录获取」。
+- 千问会话**不会自动续期**，过期后重新「登录获取」；登录/控制台地址随「站点」字段切换。
 - 关闭主窗口即退出应用。

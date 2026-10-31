@@ -2,7 +2,7 @@
 
 一个 macOS 桌面小组件，用来盯着你买的大模型套餐和余额还剩多少。
 
-目前适配 **通义千问 Token Plan（个人版）**、**DeepSeek 开放平台余额** 与 **Cursor 订阅用量**：千问显示 5 小时 / 每周 / 每月窗口的剩余比例、重置时间和套餐到期天数；DeepSeek 显示账户充值余额；Cursor 显示当前周期的**每周剩余**，以及 Account balance 里的**剩余 Credits**。架构按「多厂商」设计，加别家只需新增一个 Provider，界面不用动。
+目前适配 **通义千问 Token Plan（个人版）**、**DeepSeek 开放平台余额** 与 **Cursor 订阅用量**：千问显示 5 小时 / 每周 / 每月窗口的剩余比例、重置时间和套餐到期天数；DeepSeek 显示账户充值余额；Cursor 显示当前周期的**每周剩余**，以及 Account balance 里的**剩余 Credits**。主应用卡片展示所有窗口和重置时间；桌面小组件突出主窗口（月度优先，其次每周），并把其余窗口、重置时间和更新时间压成小字。架构按「多厂商」设计，加别家只需新增一个 Provider，界面不用动。
 
 > 界面文案、错误提示都是中文。
 
@@ -22,9 +22,9 @@
 
 ## 功能
 
-- **桌面小组件**：小尺寸显示一个来源，中尺寸并排显示多个。右键小组件 →「编辑」可勾选要显示哪些来源；主界面已关掉的供应商不会出现在勾选列表里。
+- **桌面小组件**：小尺寸显示一个来源，中尺寸并排显示多个。右键小组件 →「编辑」可勾选要显示哪些来源；勾选列表只出现主界面已启用且填好凭据的供应商，**取消勾选全部来源时会显示空状态**，不会再把没勾的来源塞回来。
 - **小组件自己抓数据**：timeline provider 直接请求接口（和天气小组件同一个模式），由系统调度刷新，**不需要主应用运行、也不需要开机自启**。刷新时只抓当前勾选的来源。
-- **登录获取凭据**：千问和 Cursor 的凭据可以在应用内嵌的登录窗口里登一次，自动取到，不用去开发者工具里翻 Cookie。
+- **登录获取凭据**：千问和 Cursor 的凭据可以在应用内嵌的登录窗口里登一次，自动取到，不用去开发者工具里翻 Cookie。千问的登录页会跟着「站点」选择一起切换（中国站/国际站）。
 - **多厂商架构**：`QuotaProvider` 协议 + 由 `credentialFields` 自动生成的配置表单，接新厂商不用改 UI。
 - **零额外能力依赖**：不需要 App Group、不需要 provisioning profile、不需要登录 Apple 开发者网站，Xcode 里选一次团队就能构建。
 
@@ -54,9 +54,14 @@ open ModelQuotaBar.xcodeproj
 ```bash
 TEAM_ID=你的TeamID ./scripts/build.sh
 cp -R "dist/大模型额度.app" /Applications/
+xattr -cr "/Applications/大模型额度.app"
 ```
 
-> **iCloud 同步目录的坑。** 仓库若放在「桌面」「文档」这类开了 iCloud 同步的目录里，FileProvider 会给构建产物附加扩展属性，`codesign` 报 `resource fork, Finder information, or similar detritus not allowed`。脚本默认把构建目录放到仓库外（`~/Library/Caches/ModelQuotaBar/`）避开；仍遇到就把仓库移到不同步的目录。
+> 最后一行不能省：仓库在 iCloud 同步目录时，FileProvider 会在 `dist/` 产物上重新附加 `com.apple.FinderInfo` 等属性，`codesign --verify` 会报 `resource fork, Finder information, or similar detritus not allowed`。安装到 `/Applications`（不在 iCloud 目录）后再 `xattr -cr` 一次即可恢复有效签名。`scripts/build.sh` 构建后会主动校验并在失败时打印这条命令。
+
+> 工程里刻意不写死任何 Team ID。不用 `TEAM_ID` 时走 Xcode 里已配好的签名设置；没配过就先按上面第 2、3 步选一次团队。
+
+> **iCloud 同步目录的坑。** 仓库若放在「桌面」「文档」这类开了 iCloud 同步的目录里，FileProvider 会给构建产物附加扩展属性，`codesign` 报 `resource fork, Finder information, or similar detritus not allowed`。脚本默认把构建目录放到仓库外（`~/Library/Caches/ModelQuotaBar/`）避开；仍遇到就把仓库移到不同步的目录，或按上面的安装命令在 `/Applications` 里清一次属性。
 
 ### 为什么必须签名
 
@@ -70,7 +75,15 @@ WidgetKit 扩展只有在带**有效代码签名**时才会被系统加载；未
 ~/Library/Containers/com.skysh3n.ModelQuotaBar.widget/Data/Library/Application Support/ModelQuotaBar/
 ```
 
-里面放两样东西：`credentials.json`（凭据，两个进程都要读）和 `quota-snapshot.json`（额度快照）。这样就不需要 App Group——App Group 是受限权限，用了就必须有 provisioning profile，门槛太高。
+里面放三样东西：
+
+- `credentials.json`：凭据，两个进程都要读；
+- `quota-snapshot.json`：小组件渲染用的精简快照；
+- `enabled-sources.json`：主应用启用的来源列表。主应用把「启用/停用」写到共享目录，小组件据此决定哪些来源出现在勾选列表里。**关掉来源不再删凭据**，重新打开不用重新登录。
+
+另外主应用自己有一份完整缓存 `~/Library/Application Support/ModelQuotaBar/quota-cache.json`，用来在启动时先显示上次的额度概览；它不参与小组件渲染。
+
+这样就不需要 App Group——App Group 是受限权限，用了就必须有 provisioning profile，门槛太高。
 
 > 改 `QuotaWidget` 的 bundle ID 时，要同步改 `Sources/QuotaCore/SharedStore.swift` 里的 `widgetBundleIdentifier`，共享目录是从它推出来的。
 
@@ -82,12 +95,14 @@ WidgetKit 扩展只有在带**有效代码签名**时才会被系统加载；未
 
 在「额度来源 → 通义千问 Token Plan」里点 **「登录获取」**，在弹出的窗口里登录百炼控制台。登录成功后应用会自动取到凭据并测试连接。凭据存在 App 里，有效期由阿里云服务端决定（通常几周）。
 
+登录页会跟着卡片里的「站点」选择走：中国大陆站用 `account.aliyun.com`，国际站用 `account.alibabacloud.com`，登录成功后再回到对应站点的控制台取票。
+
 **方式二：手动粘贴**
 
-1. 登录 <https://bailian.console.aliyun.com/>。
-2. `F12` → **Network** → 刷新页面 → 任选一个发往 `bailian-cs.console.aliyun.com` 的请求。
-3. 在 **Request Headers** 里找到 `Cookie`，复制 `login_aliyunid_ticket` 的值（只复制值就行，整段 Cookie 也能用）。
-4. 粘贴到对应输入框，站点选「中国大陆站」，点「测试连接」。
+1. 登录百炼控制台：中国大陆站 <https://bailian.console.aliyun.com/>，国际站 <https://modelstudio.console.alibabacloud.com/>。
+2. `F12` → **Network** → 刷新页面 → 任选一个发往当前站点控制台网关的请求。
+3. 在 **Request Headers** 里找到 `Cookie`，复制 `login_aliyunid_ticket` 的值（只复制值就行，整段 Cookie 也能用；值里带 `=` 也没关系）。
+4. 粘贴到对应输入框，站点选对，点「测试连接」。
 
 会话失效时卡片会提示「登录会话已失效」，点「登录获取」重新登录一次即可。
 
@@ -117,7 +132,7 @@ Cursor **没有**开放查询个人用量的 API，这里复用 cursor.com 控�
 
 卡片 / 小组件上的主数字跟控制台 “You've used x% of your included usage” 是同一份数据，这里显示的是**剩余**（官网写已用 3%，这里就是每周剩 97%）。下面一行是 Account balance 里的剩余 Credits。小组件里 Cursor 标题显示为「Cursor」+ 套餐徽章（如 Premium）。
 
-周期接口偶发超时或只回空壳时，会沿用共享目录里上次成功拿到的周用量，直到重置时间过后作废。
+周期接口偶发超时或只回空壳时，会沿用共享目录里上次成功拿到的周用量，直到重置时间过后作废。Credits 接口只回空壳 `{}` 时不会把已有余额覆盖成 0。
 
 ## 把小组件放到桌面
 
@@ -125,7 +140,8 @@ Cursor **没有**开放查询个人用量的 API，这里复用 cursor.com 控�
 
 - 小尺寸显示勾选里的第一个；
 - 中尺寸并排显示全部勾选的来源（勾 1 个时铺满整张卡）；
-- 勾选列表只出现主界面已启用且填好凭据的供应商。
+- 勾选列表只出现主界面已启用且填好凭据的供应商；
+- 全部取消勾选时显示空状态（不会再自动补回其他来源）。
 
 ## 刷新机制
 
@@ -134,13 +150,13 @@ Cursor **没有**开放查询个人用量的 API，这里复用 cursor.com 控�
 | 场景 | 行为 |
 |---|---|
 | 小组件（主应用没开） | 由系统调度，约 15 分钟抓一次（系统会按使用频率调整）；只抓勾选的来源 |
-| 主应用 | 打开时拉一次，之后点「刷新」才再请求 |
+| 主应用打开 | 有本地缓存先显示缓存，**不自动请求**；完全没缓存（首次启动/缓存丢失）时补拉一次，之后点「刷新」才再请求 |
 | **点小组件右上角的刷新按钮** | **立即刷新勾选来源**——AppIntent 交互不计入系统刷新预算 |
 | 切换尺寸 / 编辑勾选 | 先用缓存秒出界面，不阻塞在网络请求上 |
 
 **为什么不能更频繁**：WidgetKit 给每个小组件每天约 40–70 次后台刷新额度，实际节奏就是 15–60 分钟；最小间隔约 5 分钟，更频繁的请求会被系统合并或丢弃。Apple 自家的股票、天气小组件用的是同一套机制（`.after(date)`），并没有特权。想要「随看随新」，公开 API 里只有交互式刷新这一条路。
 
-**会话不会自动续期**：有效期由服务端决定，到期后在应用里点一次「登录获取」即可。小组件本身不依赖会话保持——它每次刷新都会用当前凭据去抓，凭据失效时会在卡片上提示。
+**会话不会自动续期**：有效期由服务端决定，到期后在应用里点一次「登录获取」即可。小组件会沿用上次成功拿到的数据，并在卡片上显示更新时间；主应用的卡片会显示具体的「会话已失效」错误。
 
 ## 关于凭据存储
 
@@ -156,7 +172,7 @@ Cookie / API Key 等价于登录态，直觉上该放钥匙串。但**钥匙串�
 - **用量接口是控制台内部接口**（千问和 Cursor 都是），厂商改动时可能失效；失效时错误提示会尽量说明原因。
 - **Cursor 周期用量接口不稳定**时，小组件可能短暂只显示 Credits、或沿用缓存的周剩余，点刷新或等下次调度即可。
 - **改小组件类型名或描述符后，桌面上的旧实例会变成空白**，需要删掉重新添加一次（系统会缓存描述符，改 `CFBundleVersion` 可强制重读）。
-- **会话有效期由服务端决定**，到期需要点一次「登录获取」重新登录；关机、长时间不打开应用都会让会话过期。
+- **会话有效期由服务端决定**，到期需要点一次「登录获取」重新登录；关机、长时间不打开应用都会让会话过期。小组件没有错误弹窗，只会保留上次数据和更新时间；具体原因看主应用卡片。
 
 ## 新增一个厂商
 
@@ -182,7 +198,7 @@ Cookie / API Key 等价于登录态，直觉上该放钥匙串。但**钥匙串�
    ```
 
 2. 在 `Sources/QuotaCore/ProviderRegistry.swift` 的 `all` 里加一行 `YourProvider.descriptor`。
-3. 如果这个厂商也能用网页登录取凭据，在 `metadata` 上补 `webLogin:` 规格（见 `QwenTokenPlanProvider`），设置界面会自动多出「登录获取」按钮。
+3. 如果这个厂商也能用网页登录取凭据，在 `metadata` 上补 `webLogin:` 规格（见 `QwenTokenPlanProvider`），设置界面会自动多出「登录获取」按钮。如果登录域名/控制台地址会随填写的站点变化，再补 `webLoginResolver:` / `consoleURLResolver:`。
 4. 若要在小组件里单独列出这个来源，在 `Sources/QuotaCore/WidgetSource.swift` 加一个 `case`。
 5. 在 `Tests/QuotaCoreTests/` 补一组解析测试，用真实的响应结构。
 
@@ -192,18 +208,22 @@ Cookie / API Key 等价于登录态，直觉上该放钥匙串。但**钥匙串�
 
 ```bash
 ./scripts/test.sh                      # 编译并运行单元测试
+swift build                            # 单独验证 Package.swift 能否构建 QuotaCore
 TEAM_ID=你的TeamID ./scripts/build.sh   # 用你的证书签名构建 .app
 NO_SIGN=1 ./scripts/build.sh           # 只验证能否编译（产物的小组件不会被系统加载）
-swift scripts/make-icon.swift .        # 重新生成应用图标
+./scripts/widget-preview.sh            # 打开小组件视图预览（不安装桌面小组件）
+swift scripts/make-icon.swift .        # 生成 icon-1024.png，再用 iconutil 转成 AppIcon.icns
 ```
 
 测试不依赖 XCTest，用的是 `Tests/QuotaCoreTests/TestSupport.swift` 里自带的小型执行器。这样做是因为只装 Command Line Tools 的机器上既没有 `XCTest.framework` 也没有 `xcrun xctest`，而本项目希望在任何 Mac 上都能跑测试。
 
+`widget-preview.sh` 用真实的共享快照 + 一条千问样例渲染小/中尺寸和带刷新按钮的实际中尺寸，用来检查小组件布局；它需要图形界面，但不是自动化 UI 测试。
+
 ### GitHub Actions
 
-`.github/workflows/ci.yml` 目前**只支持手动触发**（`workflow_dispatch`）。原因是 macOS 运行器的计费系数是 Linux 的 10 倍，私有仓库每月免费额度换算下来只有约 200 分钟。**仓库公开后** Actions 不限分钟，把触发条件改回 `push` / `pull_request` 即可（文件里有注释）。
+`.github/workflows/ci.yml` 现在是 `push` 到 `main` 和 `pull_request` 自动触发（仓库已公开，Actions 对公开仓库不限分钟）。CI 会跑单元测试、`swift build`（检查 Package.swift）和 `NO_SIGN=1` 的应用构建。
 
-另外 CI 跑的是 `NO_SIGN=1`，只验证能否编译与产物结构——**CI 通过不代表小组件能被系统加载**，那一步只能在本机用证书验证。
+CI 跑的是 `NO_SIGN=1`，只验证能否编译与产物结构——**CI 通过不代表小组件能被系统加载**，那一步只能在本机用证书验证。
 
 ## 项目结构
 

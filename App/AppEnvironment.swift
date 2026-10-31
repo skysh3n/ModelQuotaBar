@@ -17,10 +17,12 @@ final class AppEnvironment {
         store.onWidgetDataChanged = {
             WidgetCenter.shared.reloadAllTimelines()
         }
-
-        // 只在打开时拉一次。回到前台、切桌面、唤醒都不再自动刷新，之后用手动刷新。
-        Task { @MainActor [weak self] in
-            await self?.refresh()
+        // 有本地缓存就先出界面，不自动请求；只有完全没缓存（首次启动/缓存文件丢失）
+        // 才补拉一次，避免打开应用只看到一屏空卡片。
+        if !store.hasCachedData {
+            Task { @MainActor [weak self] in
+                await self?.refresh()
+            }
         }
     }
 
@@ -28,11 +30,6 @@ final class AppEnvironment {
 
     func refresh() async {
         await store.refreshAll()
-    }
-
-    /// 登录窗口拿到凭据后调用。
-    func didCaptureLogin() {
-        Task { await refresh() }
     }
 
     /// 启用列表变化后，对齐结果并立即刷一次。

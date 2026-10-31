@@ -21,6 +21,9 @@ struct ProviderSettingsCard: View {
     private var metadata: ProviderMetadata { provider.metadata }
     private var providerID: ProviderID { metadata.id }
     private var isEnabled: Bool { environment.settings.isEnabled(providerID) }
+    /// 登录/控制台地址随当前站点（credential 里的 region）变化。
+    private var webLoginSpec: WebLoginSpec? { metadata.webLogin(for: credential) }
+    private var consoleURL: URL? { metadata.consoleURL(for: credential) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -34,7 +37,7 @@ struct ProviderSettingsCard: View {
         .padding(14)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
         .task {
-            credential = CredentialStore.loadCredential(for: providerID)
+            loadCredentialApplyingDefaults()
         }
     }
 
@@ -56,7 +59,7 @@ struct ProviderSettingsCard: View {
                 set: { newValue in
                     environment.settings.setEnabled(newValue, for: providerID)
                     if newValue {
-                        credential = CredentialStore.loadCredential(for: providerID)
+                        loadCredentialApplyingDefaults()
                         testState = .idle
                     } else {
                         credential = ProviderCredential()
@@ -66,6 +69,7 @@ struct ProviderSettingsCard: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .accessibilityLabel("启用 \(metadata.displayName)")
         }
     }
 
@@ -86,11 +90,13 @@ struct ProviderSettingsCard: View {
             labeled(field) {
                 TextField("", text: valueBinding(for: field.id))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(field.title)
             }
         case .secret:
             labeled(field) {
                 SecureField("", text: valueBinding(for: field.id))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(field.title)
             }
         case let .picker(options):
             labeled(field) {
@@ -101,6 +107,7 @@ struct ProviderSettingsCard: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: 220, alignment: .leading)
+                .accessibilityLabel(field.title)
             }
         }
     }
@@ -143,6 +150,16 @@ struct ProviderSettingsCard: View {
         )
     }
 
+    /// 读出已存凭据，并把声明了 defaultValue 却尚未写入的字段补上后落盘。
+    private func loadCredentialApplyingDefaults() {
+        let stored = CredentialStore.loadCredential(for: providerID)
+        let loaded = stored.resolvingDefaults(for: provider.credentialFields)
+        credential = loaded
+        if loaded.allValues != stored.allValues {
+            persist()
+        }
+    }
+
     private func persist() {
         do {
             try CredentialStore.save(credential, for: providerID)
@@ -157,28 +174,30 @@ struct ProviderSettingsCard: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                if metadata.webLogin != nil {
+                if webLoginSpec != nil {
                     Button("登录获取") { isShowingWebLogin = true }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("测试连接") { runTest() }
                     .disabled(testState == .testing)
-                if let url = metadata.consoleURL {
+                if let url = consoleURL {
                     Link("打开控制台", destination: url)
                         .font(.callout)
                 }
                 Spacer()
             }
             .sheet(isPresented: $isShowingWebLogin) {
-                if let spec = metadata.webLogin {
+                // 打开弹窗后站点不再变化；spec 取当前 credential 的站点。
+                if let spec = webLoginSpec {
                     WebLoginSheet(
                         spec: spec,
                         onCaptured: { value in
                             credential[spec.targetFieldID] = value
+                            // 登录只写入 Cookie；补上站点等默认值，避免刷新时被当成缺凭据。
+                            credential = credential.resolvingDefaults(for: provider.credentialFields)
                             persist()
                             isShowingWebLogin = false
-                            // 把新凭据立刻用起来。
-                            environment.didCaptureLogin()
+                            // 测通后再刷概览；不要同时再开一轮 refresh，以免旧结果盖掉新数据。
                             runTest()
                         },
                         onCancel: { isShowingWebLogin = false })
@@ -222,7 +241,8 @@ struct ProviderSettingsCard: View {
         }
     }
 
-    private func runTest() {        testState = .testing
+    private func runTest() {
+        testState = .testing
         Task {
             do {
                 let snapshot = try await provider.fetchSnapshot(credential: credential)

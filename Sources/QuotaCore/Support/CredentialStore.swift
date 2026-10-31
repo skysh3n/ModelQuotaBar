@@ -30,55 +30,81 @@ public enum CredentialStore {
             .appendingPathComponent(fileName)
     }
 
-    /// 所有 Provider 的凭据，按 ProviderID 索引。
-    private static func loadAll() -> [String: [String: String]] {
-        if let url = fileURL,
-           let data = try? Data(contentsOf: url),
+    /// 所有 Provider 的凭据，按 ProviderID 索引。带 URL 参数是为了单测，生产路径用上面的默认值。
+    static func loadAll(from fileURL: URL?, legacyURL: URL?) -> [String: [String: String]] {
+        if let fileURL,
+           let data = try? Data(contentsOf: fileURL),
            let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         {
             return decoded
         }
-        // 共享容器里还没有，看看旧位置有没有，有就搬过来。
-        guard let legacy = legacyFileURL,
-              let data = try? Data(contentsOf: legacy),
+        // 共享容器里还没有（或读不出来），看看旧位置有没有，有就搬过来。
+        guard let legacyURL,
+              let data = try? Data(contentsOf: legacyURL),
               let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return [:] }
-        try? persist(decoded)
-        try? FileManager.default.removeItem(at: legacy)
+        // 只有新位置写成功才删旧文件，避免共享目录不可写时永久丢凭据。
+        do {
+            try persist(decoded, to: fileURL)
+            try? FileManager.default.removeItem(at: legacyURL)
+        } catch {
+            // 本进程仍可用内存里这份；下次启动还会再尝试迁移。
+        }
         return decoded
     }
 
-    private static func persist(_ all: [String: [String: String]]) throws {
-        guard let url = fileURL else {
+    static func persist(_ all: [String: [String: String]], to fileURL: URL?) throws {
+        guard let fileURL else {
             throw CredentialError.storageUnavailable
         }
         let data = try JSONEncoder().encode(all)
-        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
         // 只留属主读写。原子写入会重建文件，权限位要在写完后再设一次。
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o600],
-            ofItemAtPath: url.path)
+            ofItemAtPath: fileURL.path)
     }
 
     public static func loadCredential(for providerID: ProviderID) -> ProviderCredential {
-        ProviderCredential(loadAll()[providerID.rawValue] ?? [:])
+        loadCredential(for: providerID, from: fileURL, legacyURL: legacyFileURL)
+    }
+
+    static func loadCredential(
+        for providerID: ProviderID,
+        from fileURL: URL?,
+        legacyURL: URL?
+    ) -> ProviderCredential {
+        ProviderCredential(loadAll(from: fileURL, legacyURL: legacyURL)[providerID.rawValue] ?? [:])
     }
 
     public static func save(_ credential: ProviderCredential, for providerID: ProviderID) throws {
-        var all = loadAll()
+        try save(credential, for: providerID, to: fileURL, legacyURL: legacyFileURL)
+    }
+
+    static func save(
+        _ credential: ProviderCredential,
+        for providerID: ProviderID,
+        to fileURL: URL?,
+        legacyURL: URL?
+    ) throws {
+        var all = loadAll(from: fileURL, legacyURL: legacyURL)
         let values = credential.allValues
         if values.isEmpty {
             all.removeValue(forKey: providerID.rawValue)
         } else {
             all[providerID.rawValue] = values
         }
-        try persist(all)
+        try persist(all, to: fileURL)
     }
 
     public static func delete(for providerID: ProviderID) {
-        var all = loadAll()
+        delete(for: providerID, from: fileURL, legacyURL: legacyFileURL)
+    }
+
+    static func delete(for providerID: ProviderID, from fileURL: URL?, legacyURL: URL?) {
+        var all = loadAll(from: fileURL, legacyURL: legacyURL)
         all.removeValue(forKey: providerID.rawValue)
-        try? persist(all)
+        try? persist(all, to: fileURL)
     }
 
     public enum CredentialError: LocalizedError {

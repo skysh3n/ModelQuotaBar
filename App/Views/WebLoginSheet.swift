@@ -113,9 +113,23 @@ private struct ConsoleWebView: NSViewRepresentable {
         }
 
         /// 离开登录页说明登录完成，落回业务页——凭据是在那一步才下发的。
+        ///
+        /// 不能只比较 host：阿里云登录完成后可能先回到 `account.aliyun.com` 的首页，
+        /// host 没变，但如果一直不跳控制台，业务票据可能就不会下发。这里改看路径：
+        /// 仍在登录页（路径含 login）就等，已经到目标控制台就不重复加载。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard let spec, let postLogin = spec.postLoginURL, !didLeaveLoginPage else { return }
-            guard let host = webView.url?.host, host != spec.url.host else { return }
+            guard let spec,
+                  let postLogin = spec.postLoginURL,
+                  !didLeaveLoginPage,
+                  let url = webView.url
+            else { return }
+
+            let stillOnLogin = url.host == spec.url.host
+                && (url.path == spec.url.path || url.path.lowercased().contains("login"))
+            if stillOnLogin { return }
+
+            if url.host == postLogin.host, url.path == postLogin.path { return }
+
             didLeaveLoginPage = true
             webView.load(URLRequest(url: postLogin))
         }

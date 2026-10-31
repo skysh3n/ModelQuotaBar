@@ -5,7 +5,7 @@ import Foundation
 /// 不同厂商的套餐计量方式不同：千问 Token Plan 个人版按滚动时间窗的用量百分比计量，
 /// 团队版和多数海外厂商按 Credits / 请求次数计量。这里统一抽象为「一个有时间起止的窗口」
 /// 加一个 0...1 的已用比例，展示层只需关心比例和重置时间。
-public struct QuotaWindow: Sendable, Identifiable, Hashable {
+public struct QuotaWindow: Sendable, Codable, Identifiable, Hashable {
     /// 窗口标识，同一 Provider 内唯一，例如 `5h` / `weekly` / `monthly`。
     public let id: String
     /// 展示用标题，例如「每 5 小时」。
@@ -42,7 +42,7 @@ public struct QuotaWindow: Sendable, Identifiable, Hashable {
 }
 
 /// 账户余额。用于按量计费型厂商（充值余额）或套餐外的附加额度包。
-public struct CreditBalance: Sendable, Hashable {
+public struct CreditBalance: Sendable, Codable, Hashable {
     public let remaining: Double
     public let total: Double?
     public let unit: String
@@ -60,7 +60,7 @@ public struct CreditBalance: Sendable, Hashable {
 }
 
 /// 一次拉取得到的完整额度快照。
-public struct QuotaSnapshot: Sendable {
+public struct QuotaSnapshot: Sendable, Codable, Equatable {
     /// 账户标识，例如主账号 UID 或邮箱。厂商未提供时为 nil。
     public var accountLabel: String?
     /// 套餐名称，例如「Pro」「Lite」。
@@ -80,11 +80,15 @@ public struct QuotaSnapshot: Sendable {
     /// 本次数据的抓取时间。
     public var updatedAt: Date
 
-    /// 菜单栏上显示「剩余多少」时优先采用的主窗口。
+    /// 菜单栏/小组件上显示「剩余多少」时优先采用的主窗口。
     ///
-    /// 选择规则：优先月度（最能代表「这个月还剩多少」），其次第一个窗口。
+    /// 选择规则：优先月度（最能代表「这个月还剩多少」），其次每周，最后第一个窗口。
+    /// 千问没有月度窗口时，5 小时窗口排在最前面，但每周更能代表真实消耗，不能被
+    /// 5 小时窗口的近 100% 剩余掩盖。
     public var primaryWindow: QuotaWindow? {
-        windows.first { $0.id == "monthly" } ?? windows.first
+        windows.first { $0.id == "monthly" }
+            ?? windows.first { $0.id == "weekly" }
+            ?? windows.first
     }
 
     public init(
