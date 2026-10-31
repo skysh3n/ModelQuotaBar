@@ -33,18 +33,15 @@ struct DashboardView: View {
                 Text("额度概览")
                     .font(.headline)
                 Spacer()
+                if store.isRefreshing {
+                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                }
                 Button {
                     Task { await environment.refresh() }
                 } label: {
-                    Label {
-                        Text("刷新")
-                    } icon: {
-                        // macOS 14 无 SymbolEffect.rotate；用显式旋转，结束时复位。
-                        RefreshSpinIcon(spinning: store.isRefreshing)
-                    }
+                    Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .disabled(store.isRefreshing)
-                .accessibilityValue(store.isRefreshing ? "正在刷新" : "空闲")
             }
 
             if store.results.isEmpty {
@@ -109,34 +106,6 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-/// 刷新按钮上的箭头：`spinning` 为 true 时连续旋转，结束后复位。
-private struct RefreshSpinIcon: View {
-    var spinning: Bool
-    @State private var rotation = 0.0
-
-    var body: some View {
-        Image(systemName: "arrow.clockwise")
-            .rotationEffect(.degrees(rotation))
-            .onAppear { syncSpin(spinning) }
-            .onChange(of: spinning) { _, isSpinning in
-                syncSpin(isSpinning)
-            }
-    }
-
-    private func syncSpin(_ isSpinning: Bool) {
-        if isSpinning {
-            rotation = 0
-            withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                rotation = 360
-            }
-        } else {
-            withAnimation(.easeOut(duration: 0.15)) {
-                rotation = 0
-            }
         }
     }
 }

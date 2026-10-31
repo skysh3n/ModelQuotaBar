@@ -125,32 +125,33 @@ struct QuotaWidgetEntryView: View {
                     EmptyWidgetView()
                 }
             }
-            // 不用 `.invalidatableContent()`：intent 若被取消 / 误激活主应用，
-            // 系统可能永久停在 redact（灰条标题、大方块、按钮里方块），看起来像占位图。
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // AppIntent 交互不占小组件每日刷新预算。无参 intent，避免归档绑钮失败。
-            WidgetRefreshButton()
+            // AppIntent 交互不占小组件每日刷新预算。
+            WidgetRefreshButton(sources: entry.sources)
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
 }
 
-/// 小组件里的刷新按钮。点一下抓最新数据并重绘。
+/// 小组件里的刷新按钮。点一下会在扩展进程里抓一次最新数据并重绘。
 ///
-/// - Intent 必须 App+Widget 双 target，且无 `@Parameter`，否则 macOS 上常绑不上。
-/// - 不用 `.invalidatableContent()`（会卡成灰块占位）。
-/// - 不用自定义 `buttonStyle`：borderless/plain 在桌面小组件上容易丢掉 intent 命中。
-/// - 无 `Link` / `widgetURL` / `openURL`。
+/// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
+/// 既够手指/鼠标点，也不会在卡片里显得突兀。
 private struct WidgetRefreshButton: View {
+    let sources: [WidgetSource]
+
     var body: some View {
-        Button(intent: RefreshQuotaIntent()) {
-            Label("刷新", systemImage: "arrow.clockwise")
-                .labelStyle(.iconOnly)
+        // 只刷新当前勾选的来源，没显示的供应商直接跳过。
+        Button(intent: RefreshQuotaIntent(sources: sources)) {
+            Image(systemName: "arrow.clockwise")
                 .font(.system(size: 14, weight: .semibold))
-                .frame(width: widgetRefreshClearance, height: widgetRefreshClearance)
-                .contentShape(Rectangle())
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .background(.quaternary.opacity(0.7), in: Circle())
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("刷新额度")
     }
 }
@@ -457,6 +458,5 @@ struct QuotaWidget: Widget {
         .configurationDisplayName("大模型额度")
         .description("小尺寸显示一个来源，中尺寸并排显示多个。右键可勾选来源。")
         .supportedFamilies([.systemSmall, .systemMedium])
-        .contentMarginsDisabled()
     }
 }
