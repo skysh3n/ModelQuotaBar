@@ -67,10 +67,6 @@ private struct ConsoleWebView: NSViewRepresentable {
         let coordinator = context.coordinator
         let status = $status
         Task { @MainActor in
-            // 服务端作废的会话 Cookie 仍会留在持久存储里，不先删掉的话，
-            // 轮询会在用户登录前就把这张过期的票据当成新凭据抓走。
-            await webView.configuration.websiteDataStore.httpCookieStore
-                .deleteCookies(named: spec.cookieName)
             webView.load(URLRequest(url: spec.url))
             coordinator.startWatching(webView: webView, spec: spec, status: status, onCaptured: onCaptured)
         }
@@ -82,10 +78,26 @@ private struct ConsoleWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObserver {
         private var pollTask: Task<Void, Never>?
         private var spec: WebLoginSpec?
-        private var didLeaveLoginPage = false
+        private var status: Binding<String>?
+        private var onCaptured: ((String) -> Void)?
+        private var didReachBusinessPage = false
+        private var didSeeLoginPage = false
+        private var didRedirectToPostLogin = false
+        private var didCaptureCookie = false
+        private var webView: WKWebView?
+        /// 正在等服务端确认候选 Cookie 是否有效。
+        private var isValidating = false
+        /// 最近一次被服务端拒绝的候选值和拒绝时间。
+        private var lastRejected: (value: String, at: Date)?
+        /// 打开弹窗时存储里已有的凭据值。
+        ///
+        /// 不能靠「先删旧 Cookie」来防抓到过期的票：有些站点（如 Qoder）删掉后
+        /// 不会静默重发，只能让用户重新手登。改成记住初始值：值变了说明是新下发的；
+        /// 值没变但业务页加载成功，说明这张旧票服务端还认，两种情况才抓。
+        private var initialCookieValue: String?
 
         func startWatching(
             webView: WKWebView,
@@ -94,21 +106,94 @@ private struct ConsoleWebView: NSViewRepresentable {
             onCaptured: @escaping (String) -> Void
         ) {
             self.spec = spec
+            self.status = status
+            self.onCaptured = onCaptured
+            self.webView = webView
             pollTask?.cancel()
-            // 登录是在网页里异步完成的，没有回调可挂，轮询 Cookie 最简单可靠。
+
+            // 注册 Cookie 观察者，当 Cookie 被设置时会立即收到通知
+            webView.configuration.websiteDataStore.httpCookieStore.add(self)
+
             pollTask = Task { @MainActor in
-                while !Task.isCancelled {
+                let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+                initialCookieValue = cookies.first(where: { $0.name == spec.cookieName })?.value
+
+                // 登录是在网页里异步完成的，没有回调可挂，轮询 Cookie 最简单可靠。
+                while !Task.isCancelled && !didCaptureCookie {
                     try? await Task.sleep(for: .seconds(1))
-                    if Task.isCancelled { return }
-                    let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-                    guard let cookie = cookies.first(where: { $0.name == spec.cookieName }),
-                          !cookie.value.isEmpty
+                    if Task.isCancelled || didCaptureCookie { return }
+                    let current = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+                    guard let cookie = current.first(where: { $0.name == spec.cookieName }),
+                          !cookie.value.isEmpty,
+                          shouldCapture(value: cookie.value)
                     else { continue }
-                    status.wrappedValue = "已取得登录凭据，正在保存…"
-                    pollTask?.cancel()
-                    onCaptured(cookie.value)
-                    return
+                    await attemptCapture(cookie.value)
+                    if didCaptureCookie { return }
                 }
+            }
+        }
+
+        /// 新下发的票（值变了）随时可抓；旧票要等业务页加载成功证明它还有效。
+        /// 见过登录页、或当前停在登录页，就说明旧票已被服务端拒绝，只能等新票。
+        private func shouldCapture(value: String) -> Bool {
+            if value != initialCookieValue { return true }
+            guard didReachBusinessPage, !didSeeLoginPage, let webView else { return false }
+            let onLoginPage = webView.url.map {
+                $0.path.lowercased().contains("login") || $0.path.lowercased().contains("auth")
+            } ?? true
+            return !onLoginPage
+        }
+
+        /// 候选 Cookie 先在服务端确认有效，再采纳。
+        ///
+        /// 登录页本身可能先下发一张同名但匿名的 Cookie：只看名字会误判登录完成，
+        /// 弹窗在用户登录前关闭，还存下一张 401 的票。没有校验器时维持原行为。
+        private func attemptCapture(_ value: String) async {
+            guard !didCaptureCookie, !isValidating else { return }
+            guard let validator = spec?.validateCookie else {
+                capture(value)
+                return
+            }
+            // 同一张无效票短时间内不再重复请求，等页面下发新票或过一会儿再试。
+            if let rejected = lastRejected,
+               rejected.value == value,
+               Date().timeIntervalSince(rejected.at) < 30
+            {
+                return
+            }
+
+            isValidating = true
+            status?.wrappedValue = "正在确认登录状态…"
+            let isValid = await validator(value)
+            isValidating = false
+            guard !didCaptureCookie, !Task.isCancelled else { return }
+
+            if isValid {
+                capture(value)
+            } else {
+                lastRejected = (value, Date())
+                status?.wrappedValue = "还没登录成功，请在上方页面完成登录。"
+            }
+        }
+
+        private func capture(_ value: String) {
+            guard !didCaptureCookie else { return }
+            didCaptureCookie = true
+            status?.wrappedValue = "已取得登录凭据，正在保存…"
+            pollTask?.cancel()
+            onCaptured?(value)
+        }
+
+        /// WKHTTPCookieStoreObserver 协议方法：Cookie 变化时调用
+        func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+            guard !didCaptureCookie, let spec else { return }
+            Task { @MainActor in
+                let cookies = await cookieStore.allCookies()
+                guard let cookie = cookies.first(where: { $0.name == spec.cookieName }),
+                      !cookie.value.isEmpty,
+                      shouldCapture(value: cookie.value)
+                else { return }
+                await attemptCapture(cookie.value)
             }
         }
 
@@ -119,22 +204,35 @@ private struct ConsoleWebView: NSViewRepresentable {
         /// 仍在登录页（路径含 login）就等，已经到目标控制台就不重复加载。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard let spec,
-                  let postLogin = spec.postLoginURL,
-                  !didLeaveLoginPage,
                   let url = webView.url
             else { return }
 
-            let stillOnLogin = url.host == spec.url.host
-                && (url.path == spec.url.path || url.path.lowercased().contains("login"))
-            if stillOnLogin { return }
+            // 判断是否还在登录页：路径包含 "login" 或 "auth" 说明还没登完
+            let isLoginPage = url.path.lowercased().contains("login")
+                || url.path.lowercased().contains("auth")
+            if isLoginPage {
+                didSeeLoginPage = true
+                return
+            }
 
+            // 业务页加载完成：旧票若还有效，轮询下一轮就会抓走。
+            didReachBusinessPage = true
+
+            guard let postLogin = spec.postLoginURL,
+                  !didRedirectToPostLogin
+            else { return }
             if url.host == postLogin.host, url.path == postLogin.path { return }
 
-            didLeaveLoginPage = true
+            didRedirectToPostLogin = true
             webView.load(URLRequest(url: postLogin))
         }
 
-        deinit { pollTask?.cancel() }
+        deinit {
+            pollTask?.cancel()
+            if let webView = webView {
+                webView.configuration.websiteDataStore.httpCookieStore.remove(self)
+            }
+        }
     }
 }
 
@@ -143,14 +241,6 @@ private extension WKHTTPCookieStore {
     func allCookies() async -> [HTTPCookie] {
         await withCheckedContinuation { continuation in
             getAllCookies { continuation.resume(returning: $0) }
-        }
-    }
-
-    func deleteCookies(named name: String) async {
-        for cookie in await allCookies() where cookie.name == name {
-            await withCheckedContinuation { continuation in
-                delete(cookie) { continuation.resume() }
-            }
         }
     }
 }

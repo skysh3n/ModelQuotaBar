@@ -127,19 +127,27 @@ public struct WebLoginSpec: Sendable {
     public let targetFieldID: String
     /// 提示语，告诉用户登录后会发生什么。
     public let hint: String
+    /// 候选 Cookie 是否真的能鉴权。
+    ///
+    /// 有些站点在登录页就会先下发一张同名 Cookie，值非空但未登录。只比对
+    /// Cookie 名和值会把它误当成登录完成，弹窗提前关闭、存下无效凭据。
+    /// 给出校验器后，只有校验通过的 Cookie 才会被采纳；未提供则抓到即采纳。
+    public let validateCookie: (@Sendable (String) async -> Bool)?
 
     public init(
         url: URL,
         postLoginURL: URL? = nil,
         cookieName: String,
         targetFieldID: String,
-        hint: String
+        hint: String,
+        validateCookie: (@Sendable (String) async -> Bool)? = nil
     ) {
         self.url = url
         self.postLoginURL = postLoginURL
         self.cookieName = cookieName
         self.targetFieldID = targetFieldID
         self.hint = hint
+        self.validateCookie = validateCookie
     }
 }
 

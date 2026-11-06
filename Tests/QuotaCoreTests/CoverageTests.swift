@@ -308,7 +308,7 @@ enum SharedStoreExtraTests {
     static let suite = TestSuite("共享快照补充", [
         ("按可用来源过滤后合并", testMergeKeeping),
         ("缺 title 的旧快照仍可解码", testDecodesLegacySnapshot),
-        ("千问快照过滤 Credits 并保留其余窗口", testQwenWidgetSnapshot),
+        ("千问快照保留用量包 Credits 与其余窗口", testQwenWidgetSnapshot),
         ("Cursor 的 USD 余额保留", testCursorWidgetSnapshot),
         ("余额型来源标记", testBalanceOnlyWidgetSnapshot),
         ("内容比较覆盖周期/天数等字段", testContentComparisonFields),
@@ -392,7 +392,10 @@ enum SharedStoreExtraTests {
             0.6, accuracy: 1e-9)
         try Expect.equal(widget.primaryResetsAt, date)
         try Expect.equal(widget.secondaryWindows.map(\.id), ["5h", "weekly"])
-        try Expect.isNil(widget.balanceRemaining)
+        try Expect.equal(try Expect.notNil(widget.primaryTotalQuota), 50_000, accuracy: 1e-9)
+        try Expect.equal(widget.primaryUnit, "Credits")
+        try Expect.equal(try Expect.notNil(widget.balanceRemaining), 18_320, accuracy: 1e-9)
+        try Expect.equal(widget.balanceUnit, "Credits")
         try Expect.equal(widget.remainingDays, 29)
         try Expect.equal(widget.title, "通义千问 Token Plan")
     }
@@ -849,8 +852,8 @@ enum ProviderModelTests {
     static func testRegistry() throws {
         try Expect.equal(
             ProviderRegistry.all.map(\.id.rawValue),
-            ["qwen-token-plan", "deepseek", "cursor"])
-        try Expect.equal(Set(ProviderRegistry.all.map(\.id)).count, 3)
+            ["qwen-token-plan", "deepseek", "cursor", "qoder"])
+        try Expect.equal(Set(ProviderRegistry.all.map(\.id)).count, 4)
         try Expect.equal(
             ProviderRegistry.descriptor(for: ProviderID("cursor"))?.metadata.vendor,
             "Cursor")

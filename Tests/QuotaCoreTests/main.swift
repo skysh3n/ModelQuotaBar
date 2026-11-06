@@ -11,6 +11,7 @@ exit(TestRunner.run([
     AppSettingsTests.suite,
     DeepSeekTests.suite,
     CursorTests.suite,
+    QoderTests.suite,
     WidgetSourceTests.suite,
     ProviderMetadataTests.suite,
     CursorRegressionTests.suite,
@@ -25,4 +26,5 @@ exit(TestRunner.run([
     ProviderModelTests.suite,
     DeepSeekNetworkTests.suite,
     AliyunGatewayNetworkTests.suite,
+    QoderSessionValidationTests.suite,
 ]))

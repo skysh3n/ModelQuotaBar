@@ -212,6 +212,10 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
     public var primaryRemainingRatio: Double?
     /// 主窗口重置时间。
     public var primaryResetsAt: Date?
+    /// 主窗口总配额（Credits / 请求次数）。厂商只回百分比时为 nil。
+    public var primaryTotalQuota: Double?
+    /// 主窗口计量单位，如「Credits」。有总量时一起展示。
+    public var primaryUnit: String?
     /// 账户余额（充值型来源，如 DeepSeek）。
     public var balanceRemaining: Double?
     /// 余额币种，如「CNY」。
@@ -230,6 +234,8 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
         primaryTitle: String?,
         primaryRemainingRatio: Double?,
         primaryResetsAt: Date?,
+        primaryTotalQuota: Double? = nil,
+        primaryUnit: String? = nil,
         balanceRemaining: Double? = nil,
         balanceUnit: String? = nil,
         secondaryWindows: [WidgetWindow],
@@ -243,6 +249,8 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
         self.primaryTitle = primaryTitle
         self.primaryRemainingRatio = primaryRemainingRatio
         self.primaryResetsAt = primaryResetsAt
+        self.primaryTotalQuota = primaryTotalQuota
+        self.primaryUnit = primaryUnit
         self.balanceRemaining = balanceRemaining
         self.balanceUnit = balanceUnit
         self.secondaryWindows = secondaryWindows
@@ -267,6 +275,8 @@ public struct WidgetSnapshot: Codable, Sendable, Identifiable, Hashable {
             && primaryTitle == other.primaryTitle
             && primaryRemainingRatio == other.primaryRemainingRatio
             && primaryResetsAt == other.primaryResetsAt
+            && primaryTotalQuota == other.primaryTotalQuota
+            && primaryUnit == other.primaryUnit
             && balanceRemaining == other.balanceRemaining
             && balanceUnit == other.balanceUnit
             && secondaryWindows == other.secondaryWindows
@@ -322,9 +332,12 @@ public extension QuotaSnapshot {
             primaryTitle: primary?.title,
             primaryRemainingRatio: primary?.remainingRatio,
             primaryResetsAt: primary?.resetsAt,
-            // 千问的用量包单位是 Credits，和账户余额不是一回事，不进这个字段。
-            balanceRemaining: balance?.unit == "Credits" ? nil : balance?.remaining,
-            balanceUnit: balance?.unit == "Credits" ? nil : balance?.unit,
+            primaryTotalQuota: primary?.totalQuota,
+            primaryUnit: primary?.unit,
+            // Credits 单位的是套餐外的用量包（千问、Qoder），渲染层按「用量包剩余」
+            // 展示；CNY/USD 才是充值余额。两种都要带上，不能再把 Credits 丢掉。
+            balanceRemaining: balance?.remaining,
+            balanceUnit: balance?.unit,
             secondaryWindows: windows
                 .filter { $0.id != primary?.id }
                 .map {

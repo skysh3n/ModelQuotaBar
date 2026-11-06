@@ -29,6 +29,8 @@
 		A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */; };
 		C0850000C0850000C0850001 /* CursorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0850FEFC0850FEFC0850FEF /* CursorProvider.swift */; };
 		C0850000C0850000C0850002 /* CursorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0850FEFC0850FEFC0850FEF /* CursorProvider.swift */; };
+		Q0DE0001Q0DE0001Q0DE0001 /* QoderProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q0DE0000Q0DE0000Q0DE0000 /* QoderProvider.swift */; };
+		Q0DE0002Q0DE0002Q0DE0002 /* QoderProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q0DE0000Q0DE0000Q0DE0000 /* QoderProvider.swift */; };
 		A4267A73A74595193FBE2D02 /* QwenTokenPlanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A2B94B842284682A682BDA /* QwenTokenPlanProvider.swift */; };
 		AC7759AF8BE3806BBD61F1B1 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = E4D958D3FB8832252D609B9A /* AppIcon.icns */; };
 		AEAC44C649FB8FC17F623ABD /* QuotaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DAB9DEC9AE4F3506F165889 /* QuotaProvider.swift */; };
@@ -105,6 +107,7 @@
 		CE8FCA2449A2AD3BAC7A0150 /* QuotaWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaWidgetBundle.swift; sourceTree = "<group>"; };
 		D33E5EE0D33E5EE0D33E5EE0 /* DeepSeekProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekProvider.swift; sourceTree = "<group>"; };
 		C0850FEFC0850FEFC0850FEF /* CursorProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorProvider.swift; sourceTree = "<group>"; };
+		Q0DE0000Q0DE0000Q0DE0000 /* QoderProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QoderProvider.swift; sourceTree = "<group>"; };
 		E4D958D3FB8832252D609B9A /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		E5B4D59F3F5A9B7C3C25820C /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		FFF5649CD57E659FEC89083C /* ModelQuotaBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelQuotaBarApp.swift; sourceTree = "<group>"; };
@@ -137,6 +140,7 @@
 				1B60B052C4689661FD7AD3F9 /* QwenTokenPlan */,
 				DEE5E1DEE5E1DEE5E1DEE5E1 /* DeepSeek */,
 				C085C0DEC085C0DEC085C0DE /* Cursor */,
+				Q0DE0003Q0DE0003Q0DE0003 /* Qoder */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -245,6 +249,14 @@
 				C0850FEFC0850FEFC0850FEF /* CursorProvider.swift */,
 			);
 			path = Cursor;
+			sourceTree = "<group>";
+		};
+		Q0DE0003Q0DE0003Q0DE0003 /* Qoder */ = {
+			isa = PBXGroup;
+			children = (
+				Q0DE0000Q0DE0000Q0DE0000 /* QoderProvider.swift */,
+			);
+			path = Qoder;
 			sourceTree = "<group>";
 		};
 		F23D06F03250067899697180 /* Support */ = {
@@ -391,6 +403,7 @@
 				7D540B781D4AFE876984F81A /* QwenTokenPlanRegion.swift in Sources */,
 				A00D0000A00D0000A00D0001 /* DeepSeekProvider.swift in Sources */,
 				C0850000C0850000C0850001 /* CursorProvider.swift in Sources */,
+				Q0DE0001Q0DE0001Q0DE0001 /* QoderProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -416,6 +429,7 @@
 				024CB13C214B63C94FADEACD /* QwenTokenPlanRegion.swift in Sources */,
 				A00D0000A00D0000A00D0002 /* DeepSeekProvider.swift in Sources */,
 				C0850000C0850000C0850002 /* CursorProvider.swift in Sources */,
+				Q0DE0002Q0DE0002Q0DE0002 /* QoderProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

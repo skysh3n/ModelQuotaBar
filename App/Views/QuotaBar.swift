@@ -44,7 +44,7 @@ struct QuotaWindowRow: View {
             QuotaBar(remainingRatio: window.remainingRatio, height: isPrimary ? 7 : 5)
             HStack(spacing: 6) {
                 if let total = window.totalQuota, let remaining = Format.remainingCredits(of: window) {
-                    Text("\(Format.credits(remaining)) / \(Format.credits(total)) \(window.unit)")
+                    Text("剩 \(Format.credits(remaining)) / 共 \(Format.credits(total)) \(window.unit)")
                         .font(.caption2)
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)

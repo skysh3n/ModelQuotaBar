@@ -24,7 +24,10 @@ struct QuotaEntry: TimelineEntry {
     }
 
     var selectedSnapshots: [WidgetSnapshot] {
-        isPlaceholder ? allSnapshots : WidgetSource.select(sources, from: allSnapshots)
+        guard !isPlaceholder else { return allSnapshots }
+        // 先过滤可用来源再截断，见 WidgetSource.displaySources。
+        return Array(WidgetSource.select(sources, from: allSnapshots)
+            .prefix(WidgetSource.maxSourcesPerWidget))
     }
 }
 
@@ -84,11 +87,12 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> QuotaEntry { .placeholder }
 
     func snapshot(for configuration: SelectSourcesIntent, in context: Context) async -> QuotaEntry {
-        // 编辑配置 / 切换尺寸时系统优先走这里，只出缓存，别卡在网络上。
+        // 截断在 selectedSnapshots 里按「可用来源」做，这里不要提前截。
         context.isPreview ? .placeholder : cachedQuotaEntry(sources: configuration.sources)
     }
 
     func timeline(for configuration: SelectSourcesIntent, in context: Context) async -> Timeline<QuotaEntry> {
+        // 截断在 selectedSnapshots 里按「可用来源」做，这里不要提前截。
         let sources = configuration.sources
         let cached = SharedStore.loadSnapshots()
 
@@ -202,22 +206,17 @@ struct SmallWidgetView: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
-                if let credits = widgetCreditsText(snapshot) {
-                    Text(credits)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                if snapshot.balanceRemaining != nil {
+                    WidgetCreditsBlock(snapshot: snapshot, valueSize: 20)
                         .layoutPriority(1)
                 }
             } else if let balance = snapshot.balanceRemaining {
-                Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
+                Text(widgetBalanceLabel(snapshot.balanceUnit))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -234,12 +233,70 @@ struct SmallWidgetView: View {
     }
 }
 
-/// 有每周剩余时，再带上 Account balance 的剩余 Credits，如「$0.00 剩余」。
-private func widgetCreditsText(_ snapshot: WidgetSnapshot) -> String? {
-    guard snapshot.primaryRemainingRatio != nil,
-          let balance = snapshot.balanceRemaining
+/// 是否是用量包（Credits），而不是充值余额（CNY/USD）。
+private func widgetIsCreditsUnit(_ unit: String?) -> Bool {
+    unit?.caseInsensitiveCompare("Credits") == .orderedSame
+}
+
+/// Credits 数量按整数展示，带千分位（「1,166」）。
+private func widgetCount(_ value: Double) -> String {
+    value.formatted(.number.precision(.fractionLength(0)))
+}
+
+/// 余额数字：用量包按整数展示（「300 Credits」），金额保留两位小数。
+private func widgetBalanceValue(_ value: Double, unit: String?) -> String {
+    if widgetIsCreditsUnit(unit) {
+        return "\(widgetCount(value)) Credits"
+    }
+    return CurrencySymbol.format(value, unit: unit ?? "")
+}
+
+private func widgetBalanceLabel(_ unit: String?) -> String {
+    if widgetIsCreditsUnit(unit) { return "用量包剩余" }
+    return unit == "USD" ? "剩余 Credits" : "账户余额"
+}
+
+/// 主窗口的「总量 / 剩余」，如「剩 1,174 / 共 2,000 Credits」。
+/// 厂商只回百分比（没有总量）时返回 nil，不硬凑数字。
+private func widgetQuotaText(_ snapshot: WidgetSnapshot) -> String? {
+    guard let ratio = snapshot.primaryRemainingRatio,
+          let total = snapshot.primaryTotalQuota, total > 0,
+          let unit = snapshot.primaryUnit, !unit.isEmpty
     else { return nil }
-    return "\(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? "")) 剩余"
+    return "剩 \(widgetCount(total * ratio)) / 共 \(widgetCount(total)) \(unit)"
+}
+
+/// 有主窗口时压到底部的余额。
+///
+/// Credits 是用量包（千问、Qoder），和主窗口百分比不是一回事，单独起一行标签；
+/// 金额型（Cursor）保持「$0.00 剩余」的紧凑写法。
+private struct WidgetCreditsBlock: View {
+    let snapshot: WidgetSnapshot
+    var valueSize: CGFloat = 18
+
+    var body: some View {
+        if let balance = snapshot.balanceRemaining {
+            if widgetIsCreditsUnit(snapshot.balanceUnit) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(widgetBalanceLabel(snapshot.balanceUnit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
+                        .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            } else {
+                Text("\(widgetBalanceValue(balance, unit: snapshot.balanceUnit)) 剩余")
+                    .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+    }
 }
 
 /// 其余窗口压成一行，例如「每周 72.5% · 每月 80.0%」。
@@ -389,13 +446,13 @@ private struct SourceColumn: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 if let balance = snapshot.balanceRemaining {
-                    Text(CurrencySymbol.format(balance, unit: snapshot.balanceUnit ?? ""))
+                    Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
                         .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                 }
-                Text(snapshot.balanceUnit == "USD" ? "剩余 Credits" : "账户余额")
+                Text(widgetBalanceLabel(snapshot.balanceUnit))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -433,6 +490,15 @@ private struct SourceColumn: View {
                     .frame(height: barHeight)
             }
 
+            if let quota = widgetQuotaText(snapshot) {
+                Text(quota)
+                    .font(.system(size: 9))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
             if let secondary = widgetSecondaryText(snapshot) {
                 Text(secondary)
                     .font(.system(size: 9))
@@ -443,14 +509,9 @@ private struct SourceColumn: View {
 
             Spacer(minLength: 0)
 
-            // 底栏 Credits 提高布局优先级，避免中尺寸双栏高度吃紧时被 Spacer 挤没。
-            if let credits = widgetCreditsText(snapshot) {
-                Text(credits)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+            // 底栏余额提高布局优先级，避免中尺寸双栏高度吃紧时被 Spacer 挤没。
+            if snapshot.balanceRemaining != nil {
+                WidgetCreditsBlock(snapshot: snapshot, valueSize: 20)
                     .layoutPriority(1)
             }
 
@@ -528,7 +589,7 @@ struct QuotaWidget: Widget {
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度")
-        .description("小尺寸显示一个来源，中尺寸并排显示多个。右键可勾选来源。")
+        .description("小尺寸显示一个来源，中尺寸并排显示两个。右键可勾选来源。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

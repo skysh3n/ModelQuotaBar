@@ -17,6 +17,8 @@ final class AppEnvironment {
         store.onWidgetDataChanged = {
             WidgetCenter.shared.reloadAllTimelines()
         }
+        // 重装/升级后系统可能还挂着旧的小组件时间线，启动时主动让 WidgetKit 重新取一次。
+        WidgetCenter.shared.reloadAllTimelines()
         // 有本地缓存就先出界面，不自动请求；只有完全没缓存（首次启动/缓存文件丢失）
         // 才补拉一次，避免打开应用只看到一屏空卡片。
         if !store.hasCachedData {

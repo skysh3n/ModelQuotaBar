@@ -17,6 +17,7 @@ enum WidgetSourceTests {
         ("缺勾选来源或过旧时才需要刷新", testNeedsRefreshWhenMissingOrStale),
         ("没有可用来源时不刷新", testNeedsRefreshSkipsWhenNothingAvailable),
         ("主界面关掉的来源不进有效勾选", testEffectiveSourcesDropsUnavailable),
+        ("停用来源排在前面也不挤掉可用来源", testDisplaySourcesFiltersBeforeLimit),
     ])
 
     private static let qwen = WidgetSnapshot(
@@ -37,7 +38,13 @@ enum WidgetSourceTests {
         balanceRemaining: nil, balanceUnit: nil,
         secondaryWindows: [], remainingDays: nil, updatedAt: Date())
 
-    private static let all = [qwen, deepseek, cursor]
+    private static let qoder = WidgetSnapshot(
+        id: "qoder", vendor: "Qoder CN", planName: "专业版",
+        primaryTitle: "每月", primaryRemainingRatio: 0.05, primaryResetsAt: nil,
+        balanceRemaining: 100, balanceUnit: "Credits",
+        secondaryWindows: [], remainingDays: nil, updatedAt: Date())
+
+    private static let all = [qwen, deepseek, cursor, qoder]
 
     private static func select(_ sources: [WidgetSource], from snapshots: [WidgetSnapshot] = all) -> [String] {
         // 单测不读本机凭据，按「全部可用」验证勾选逻辑。
@@ -99,7 +106,7 @@ enum WidgetSourceTests {
     }
 
     static func testAvailableSourcesHonorsEnabledList() throws {
-        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor"]
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor", "qoder"]
         try Expect.equal(
             WidgetSource.availableSources(
                 enabled: ["qwen-token-plan", "deepseek"],
@@ -178,5 +185,20 @@ enum WidgetSourceTests {
         try Expect.equal(
             WidgetSource.effectiveDisplaySources([.qwen], available: []),
             [])
+    }
+
+    static func testDisplaySourcesFiltersBeforeLimit() throws {
+        // 旧勾选里千问排第一但已停用；先过滤再截断，两个可用来源都要保住。
+        try Expect.equal(
+            WidgetSource.displaySources(
+                [.qwen, .cursor, .deepseek],
+                available: [.deepseek, .cursor, .qoder]),
+            [.cursor, .deepseek])
+        // 可用来源超过两个时只取前两个。
+        try Expect.equal(
+            WidgetSource.displaySources(
+                [.deepseek, .cursor, .qoder],
+                available: [.deepseek, .cursor, .qoder]),
+            [.deepseek, .cursor])
     }
 }
