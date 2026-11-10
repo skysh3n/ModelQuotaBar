@@ -4,6 +4,7 @@ import Foundation
 enum DeepSeekTests {
     static let suite = TestSuite("DeepSeek · 余额解析", [
         ("解析人民币余额", testParsesCNYBalance),
+        ("余额标签是账户余额", testBalanceLabelIsAccountBalance),
         ("多种币种时优先人民币", testPrefersCNY),
         ("没有人民币时退回唯一币种", testFallsBackToOnlyCurrency),
         ("is_available 为 false 时透出", testReflectsUnavailable),
@@ -20,6 +21,13 @@ enum DeepSeekTests {
         try Expect.equal(balance.unit, "CNY")
         try Expect.equal(snapshot.isAvailable, true)
         try Expect.isTrue(snapshot.windows.isEmpty)
+    }
+
+    static func testBalanceLabelIsAccountBalance() throws {
+        let snapshot = try makeSnapshot(payload: cnyAndUsd)
+        let balance = try Expect.notNil(snapshot.balance)
+        // DeepSeek 的余额标签应该是「账户余额」
+        try Expect.equal(balance.label, "账户余额")
     }
 
     static func testPrefersCNY() throws {

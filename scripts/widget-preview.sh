@@ -31,5 +31,5 @@ swiftc \
   Widget/QuotaWidget.swift \
   scripts/WidgetPreview/main.swift
 
-echo "==> 打开预览窗口（关闭窗口退出）"
-exec "$BUILD/WidgetPreview"
+echo "==> 打开预览窗口（关闭窗口退出），或 --png 导出离屏截图"
+exec "$BUILD/WidgetPreview" "$@"

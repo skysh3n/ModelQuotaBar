@@ -18,6 +18,14 @@ enum WidgetSourceTests {
         ("没有可用来源时不刷新", testNeedsRefreshSkipsWhenNothingAvailable),
         ("主界面关掉的来源不进有效勾选", testEffectiveSourcesDropsUnavailable),
         ("停用来源排在前面也不挤掉可用来源", testDisplaySourcesFiltersBeforeLimit),
+        ("小组件只显示主应用打开的来源", testWidgetDisplayFollowsEnabledList),
+        ("勾选不会被启用列表里的其他来源顶替", testSelectionDoesNotBackfill),
+        ("编辑列表不含主应用关掉的来源", testSelectableSourcesOmitsDisabled),
+        ("关掉的开关不计入，打开的保持原顺序", testOpenedSourcesSkipsOffSwitches),
+        ("主界面关掉任何一个来源都不画", testTurningOffAnySourceOmitsIt),
+        ("凭据读不到时仍用已启用的缓存", testWidgetDisplayFallsBackToCache),
+        ("快照按启用顺序而不是文件顺序", testOrderedSnapshotsFollowsSources),
+        ("可用来源解析失败时不清空缓存", testRefreshKeepIDsDoesNotWipeCache),
     ])
 
     private static let qwen = WidgetSnapshot(
@@ -200,5 +208,142 @@ enum WidgetSourceTests {
                 [.deepseek, .cursor, .qoder],
                 available: [.deepseek, .cursor, .qoder]),
             [.deepseek, .cursor])
+    }
+
+    static func testWidgetDisplayFollowsEnabledList() throws {
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor", "qoder"]
+        // 主应用关掉千问后，小组件不能再凭自己的旧勾选把它显示出来。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                enabled: ["cursor", "deepseek", "qoder"],
+                configured: configured),
+            [.cursor, .deepseek])
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                enabled: ["qoder"],
+                configured: configured),
+            [.qoder])
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(enabled: [], configured: configured),
+            [])
+    }
+
+    static func testSelectionDoesNotBackfill() throws {
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor", "qoder"]
+        let enabled = ["cursor", "deepseek", "qoder"]
+        // 勾了千问和 Qoder：千问已被主应用关掉，只能画 Qoder，不能把 Cursor 补进来。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                toggles: [.qwen, .qoder],
+                enabled: enabled,
+                configured: configured),
+            [.qoder])
+        // 勾了 DeepSeek 和 Qoder，就不能再出现没勾的 Cursor。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                toggles: [.deepseek, .qoder],
+                enabled: enabled,
+                configured: configured),
+            [.deepseek, .qoder])
+        // 勾的来源全被主应用关掉时显示空，不用别的来源顶。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                toggles: [.qwen],
+                enabled: enabled,
+                configured: configured),
+            [])
+    }
+
+    static func testTurningOffAnySourceOmitsIt() throws {
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor", "qoder"]
+        let toggles = Array(WidgetSource.allCases)
+        for disabled in WidgetSource.allCases {
+            let enabled = WidgetSource.allCases
+                .filter { $0 != disabled }
+                .map(\.rawValue)
+            let shown = WidgetSource.widgetDisplaySources(
+                toggles: toggles,
+                enabled: enabled,
+                configured: configured)
+            try Expect.isTrue(!shown.contains(disabled), "关掉 \(disabled.rawValue) 后不应再画")
+            let kept = WidgetSource.droppingDisabled(all, enabled: enabled).map(\.id)
+            try Expect.isTrue(!kept.contains(disabled.rawValue))
+        }
+    }
+
+    static func testOpenedSourcesSkipsOffSwitches() throws {
+        // 通义千问开关关掉时，不把它算进要画的来源。
+        try Expect.equal(
+            WidgetSource.openedSources(
+                showQwen: false,
+                showDeepSeek: true,
+                showCursor: false,
+                showQoder: true),
+            [.deepseek, .qoder])
+        // 四个都开时仍按原顺序交给后面截到两个，这里不丢后两个。
+        try Expect.equal(
+            WidgetSource.openedSources(
+                showQwen: true,
+                showDeepSeek: true,
+                showCursor: true,
+                showQoder: true),
+            [.qwen, .deepseek, .cursor, .qoder])
+    }
+
+    static func testSelectableSourcesOmitsDisabled() throws {
+        let configured: Set<String> = ["qwen-token-plan", "deepseek", "cursor", "qoder"]
+        try Expect.equal(
+            WidgetSource.selectableSources(
+                enabled: ["cursor", "deepseek", "qoder"],
+                configured: configured),
+            [.cursor, .deepseek, .qoder])
+        try Expect.equal(
+            WidgetSource.droppingDisabled(
+                [qwen, cursor],
+                enabled: ["cursor", "deepseek", "qoder"]).map(\.id),
+            ["cursor"])
+    }
+
+    static func testWidgetDisplayFallsBackToCache() throws {
+        // 启用列表还在，但这一轮没读到凭据：不能因此把小组件画空。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                enabled: ["cursor", "deepseek", "qoder"],
+                configured: [],
+                cachedIDs: ["deepseek", "cursor", "qoder", "qwen-token-plan"]),
+            [.cursor, .deepseek])
+        // 主应用明确全关时，缓存里有千问也不能再显示。
+        try Expect.equal(
+            WidgetSource.widgetDisplaySources(
+                enabled: [],
+                configured: [],
+                cachedIDs: ["qwen-token-plan", "cursor"]),
+            [])
+    }
+
+    static func testOrderedSnapshotsFollowsSources() throws {
+        try Expect.equal(
+            WidgetSource.orderedSnapshots([.cursor, .deepseek], from: all).map(\.id),
+            ["cursor", "deepseek"])
+        // 没有快照的来源跳过，不拿别的来源顶。
+        try Expect.equal(
+            WidgetSource.orderedSnapshots([.qwen], from: [cursor, deepseek]).map(\.id),
+            [])
+    }
+
+    static func testRefreshKeepIDsDoesNotWipeCache() throws {
+        let keepCursor: Set<String>? = Set(["cursor", "deepseek"])
+        try Expect.equal(
+            WidgetSource.refreshKeepIDs(available: [.cursor, .deepseek], enabled: ["cursor"]),
+            keepCursor)
+        // 主应用全关，才允许用空集合把缓存清掉。
+        let keepNone: Set<String>? = []
+        try Expect.equal(
+            WidgetSource.refreshKeepIDs(available: [], enabled: []),
+            keepNone)
+        // 凭据没读到、启用列表也没读到：不要动缓存。
+        try Expect.isTrue(WidgetSource.refreshKeepIDs(available: [], enabled: nil) == nil)
+        try Expect.isTrue(
+            WidgetSource.refreshKeepIDs(available: [], enabled: ["cursor", "deepseek"]) == nil)
     }
 }

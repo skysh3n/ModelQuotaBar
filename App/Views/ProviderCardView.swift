@@ -55,6 +55,10 @@ struct ProviderCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             if snapshot.windows.isEmpty, let balance = snapshot.balance {
                 balanceHero(balance, isAvailable: snapshot.isAvailable)
+                // 多块资源包时，第一块已经在 hero 里显示，其余的单独列出。
+                if snapshot.resourcePackages.count > 1 {
+                    resourcePackageRows(snapshot.resourcePackages.dropFirst())
+                }
             } else {
                 if let primary = snapshot.primaryWindow {
                     heroNumber(primary)
@@ -66,11 +70,21 @@ struct ProviderCardView: View {
                             isPrimary: window.id == snapshot.primaryWindow?.id)
                     }
                 }
-                if let balance = snapshot.balance, balance.unit != "Credits" {
-                    accountCredits(balance)
+                // 资源包列表：每块一行，显示标签、剩余/总量、到期时间。
+                if !snapshot.resourcePackages.isEmpty {
+                    resourcePackageRows(snapshot.resourcePackages)
                 }
             }
             footnote(snapshot)
+        }
+    }
+
+    /// 渲染多块资源包，每块一行。
+    private func resourcePackageRows(_ packages: some RandomAccessCollection<ResourcePackageInfo>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(packages), id: \.self) { package in
+                ResourcePackageRow(package: package)
+            }
         }
     }
 
@@ -106,7 +120,8 @@ struct ProviderCardView: View {
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(isAvailable == false ? Color.orange : Color.primary)
-                Text(balance.unit == "USD" ? "剩余 Credits" : "账户余额")
+                // 优先使用资源包自带的 label；否则按单位兜底。
+                Text(balance.label ?? balanceLabel(for: balance.unit))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -119,14 +134,19 @@ struct ProviderCardView: View {
         }
     }
 
+    /// 按单位推断兜底标签：Credits →「用量包剩余」，其他 →「账户余额」。
+    private func balanceLabel(for unit: String) -> String {
+        if unit.caseInsensitiveCompare("Credits") == .orderedSame {
+            return "用量包剩余"
+        }
+        return "账户余额"
+    }
+
     @ViewBuilder
     private func footnote(_ snapshot: QuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            if let balance = snapshot.balance, balance.unit == "Credits", !snapshot.windows.isEmpty {
-                Text("用量包剩余 \(Format.credits(balance.remaining)) \(balance.unit)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            // Credits 单位的资源包已经在 resourcePackageRows 里显示，不再重复。
+            // 这里只保留套餐剩余天数 / 到期时间。
             if let days = snapshot.remainingDays {
                 Text("套餐剩余 \(days) 天")
                     .font(.caption2)
@@ -172,5 +192,50 @@ struct ProviderCardView: View {
         Text("点右上角「刷新」获取额度")
             .font(.caption)
             .foregroundStyle(.secondary)
+    }
+}
+
+// MARK: - 资源包行
+
+/// 一块资源包的展示行：标签 + 剩余/总量 + 到期时间。
+private struct ResourcePackageRow: View {
+    let package: ResourcePackageInfo
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(displayLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let total = package.total, total > 0 {
+                Text("\(Format.credits(package.remaining)) / \(Format.credits(total)) \(package.unit)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+            } else {
+                Text("\(Format.credits(package.remaining)) \(package.unit)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+        }
+        if let expiresAt = package.expiresAt {
+            Text("\(Format.absolute(expiresAt)) 到期")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// 展示标签：优先资源包自带的 label，否则按单位兜底。
+    ///
+    /// 兜底逻辑只按单位区分：Credits →「用量包剩余」，其他（CNY/USD 等）→「账户余额」。
+    /// 展示层不再猜测具体币种；具体文案由各 Provider 在构造时通过 label 传入。
+    private var displayLabel: String {
+        if let label = package.label, !label.isEmpty {
+            return label
+        }
+        // 按单位兜底：Credits 是套餐外用量的单位，其他（CNY/USD/EUR 等）是充值余额。
+        if package.unit.caseInsensitiveCompare("Credits") == .orderedSame {
+            return "用量包剩余"
+        }
+        return "账户余额"
     }
 }

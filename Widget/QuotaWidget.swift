@@ -24,10 +24,15 @@ struct QuotaEntry: TimelineEntry {
     }
 
     var selectedSnapshots: [WidgetSnapshot] {
-        guard !isPlaceholder else { return allSnapshots }
-        // 先过滤可用来源再截断，见 WidgetSource.displaySources。
-        return Array(WidgetSource.select(sources, from: allSnapshots)
-            .prefix(WidgetSource.maxSourcesPerWidget))
+        // 主界面关掉的来源，不管是哪一个，都不画。开关还开着也不行。
+        let allowed = WidgetSource.droppingDisabled(allSnapshots)
+        if isPlaceholder {
+            return allowed
+        }
+        let display = WidgetSource.widgetDisplaySources(
+            toggles: sources,
+            cachedIDs: Set(allowed.map(\.id)))
+        return WidgetSource.orderedSnapshots(display, from: allowed)
     }
 }
 
@@ -64,15 +69,17 @@ private func cachedQuotaEntry(sources: [WidgetSource]) -> QuotaEntry {
     QuotaEntry(date: Date(), allSnapshots: SharedStore.loadSnapshots(), sources: sources)
 }
 
-/// 只抓当前勾选的来源；结果盖到缓存上。
+/// 只抓主应用当前打开的来源；结果盖到缓存上。
 ///
 /// `keeping` 是当前仍可用（已启用 + 凭据完整）的来源：停用/清空凭据的来源会从
 /// 缓存里清掉，全都没有时缓存也会被清空，不会永远显示旧数据。
-private func refreshSelectedSources(_ sources: [WidgetSource]) async -> [WidgetSnapshot] {
+private func refreshEnabledSources() async -> [WidgetSnapshot] {
     let available = WidgetSource.availableSources()
-    let availableIDs = Set(available.map(\.rawValue))
-    let ids = Set(WidgetSource.effectiveDisplaySources(sources, available: available).map(\.rawValue))
-    let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
+    let enabled = SharedStore.loadEnabledProviderIDs()
+    guard let availableIDs = WidgetSource.refreshKeepIDs(available: available, enabled: enabled) else {
+        return SharedStore.loadSnapshots()
+    }
+    let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: availableIDs)
     return SharedStore.saveMerging(fresh, keeping: availableIDs)
 }
 
@@ -84,29 +91,33 @@ private func quotaRefreshPolicy() -> TimelineReloadPolicy {
 
 /// 时间线 Provider。小/中尺寸共用一套取数逻辑，只是渲染时取的数量不同。
 struct QuotaTimelineProvider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> QuotaEntry { .placeholder }
+    func placeholder(in context: Context) -> QuotaEntry {
+        cachedQuotaEntry(sources: Array(WidgetSource.allCases))
+    }
 
     func snapshot(for configuration: SelectSourcesIntent, in context: Context) async -> QuotaEntry {
-        // 截断在 selectedSnapshots 里按「可用来源」做，这里不要提前截。
-        context.isPreview ? .placeholder : cachedQuotaEntry(sources: configuration.sources)
+        // 编辑面板的预览必须跟着当前勾选走，不能总画启用列表的前两个。
+        cachedQuotaEntry(sources: configuration.sources)
     }
 
     func timeline(for configuration: SelectSourcesIntent, in context: Context) async -> Timeline<QuotaEntry> {
-        // 截断在 selectedSnapshots 里按「可用来源」做，这里不要提前截。
-        let sources = configuration.sources
         let cached = SharedStore.loadSnapshots()
+        let sources = configuration.sources
+        let display = WidgetSource.widgetDisplaySources(
+            toggles: sources,
+            cachedIDs: Set(cached.map(\.id)))
 
         // 有缓存就立刻交卷——切换尺寸也会重跑 timeline，这里绝不能 await 网络。
-        // 数据确实旧了，再在后台只刷新勾选的来源，抓完若有变化再 reload。
+        // 数据确实旧了，再在后台只刷新主应用打开的来源，抓完若有变化再 reload。
         if !cached.isEmpty {
             if WidgetSource.needsRefresh(
                 cached,
-                sources: sources,
-                available: WidgetSource.availableSources())
+                sources: display,
+                available: display)
             {
                 let before = cached
                 Task {
-                    let merged = await refreshSelectedSources(sources)
+                    let merged = await refreshEnabledSources()
                     if !SharedStore.snapshotsHaveSameContent(merged, before) {
                         WidgetReloader.reload()
                     }
@@ -117,8 +128,8 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
                 policy: quotaRefreshPolicy())
         }
 
-        // 冷启动：没有缓存才同步等一轮（仍只抓勾选的来源）。
-        let snapshots = await refreshSelectedSources(sources)
+        // 冷启动：没有缓存才同步等一轮（仍只抓主应用打开的来源）。
+        let snapshots = await refreshEnabledSources()
         return Timeline(
             entries: [QuotaEntry(date: Date(), allSnapshots: snapshots, sources: sources)],
             policy: quotaRefreshPolicy())
@@ -128,11 +139,27 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
 /// 右上角刷新按钮占用的宽度；分栏宽度计算必须扣掉，不能只靠外层 padding。
 private let widgetRefreshClearance: CGFloat = 44
 
+/// 小尺寸底部资源包行是否用整卡宽度（只有标题行避让刷新按钮）。
+///
+/// 多块资源包（Qoder CN）时，「标签列 + 数值列」在扣掉 44pt 按钮避让后放不下，
+/// Grid 会按每行各自的溢出量分别缩字号，标签和数值都变成上下行大小不一。
+/// 这类卡片改成只让标题行避让按钮，底部行才有足够宽度把标签按 9pt、数值按 12pt 排下。
+private func widgetSmallRowsUseFullWidth(_ snapshot: WidgetSnapshot) -> Bool {
+    snapshot.resourcePackages.count >= 2
+}
+
+/// 小尺寸底部内容离卡片底边的留白：贴着底边会被看成裁掉，而侧边留白明显更宽。
+private let widgetSmallBottomLift: CGFloat = 10
+
 struct QuotaWidgetEntryView: View {
-    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetFamily) private var environmentFamily
     let entry: QuotaEntry
+    /// 预览宿主不是 WidgetKit 进程，`widgetFamily` 环境值取不到 small，只能显式指定。
+    /// 真实小组件不传，行为不变。
+    var familyOverride: WidgetFamily? = nil
 
     var body: some View {
+        let family = familyOverride ?? environmentFamily
         ZStack(alignment: .topTrailing) {
             Group {
                 // 中/大尺寸并列显示所有**勾选**的来源；小尺寸只放得下第一个。
@@ -144,7 +171,9 @@ struct QuotaWidgetEntryView: View {
                     }
                 } else if let first = entry.selectedSnapshots.first {
                     SmallWidgetView(snapshot: first)
-                        .padding(.trailing, widgetRefreshClearance)
+                        .padding(
+                            .trailing,
+                            widgetSmallRowsUseFullWidth(first) ? 0 : widgetRefreshClearance)
                 } else {
                     EmptyWidgetView()
                 }
@@ -152,7 +181,7 @@ struct QuotaWidgetEntryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // AppIntent 交互不占小组件每日刷新预算。
-            WidgetRefreshButton(sources: entry.sources)
+            WidgetRefreshButton()
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -163,11 +192,8 @@ struct QuotaWidgetEntryView: View {
 /// 尺寸按可点性来定：图标 14pt、点击区 30×30，配一层淡淡的圆形底，
 /// 既够手指/鼠标点，也不会在卡片里显得突兀。
 private struct WidgetRefreshButton: View {
-    let sources: [WidgetSource]
-
     var body: some View {
-        // 只刷新当前勾选的来源，没显示的供应商直接跳过。
-        Button(intent: RefreshQuotaIntent(sources: sources)) {
+        Button(intent: RefreshQuotaIntent()) {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -186,8 +212,11 @@ struct SmallWidgetView: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             WidgetSourceHeader(snapshot: snapshot)
+                .padding(
+                    .trailing,
+                    widgetSmallRowsUseFullWidth(snapshot) ? widgetRefreshClearance : 0)
             Spacer(minLength: 0)
             if let ratio = snapshot.primaryRemainingRatio {
                 Text(widgetPercent(ratio))
@@ -200,25 +229,66 @@ struct SmallWidgetView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 WidgetProgressBar(remainingRatio: ratio)
+                    .padding(.vertical, 1)
+                // 「剩 X / 共 Y Credits」明细行：小尺寸也要显示，用户点名的关键信息
+                if let quota = widgetQuotaText(snapshot) {
+                    Text(quota)
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
                 Text(widgetUsageFooter(snapshot))
-                    .font(.system(size: 9))
+                    .font(.system(size: 8))
                     .foregroundStyle(.tertiary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
-                if snapshot.balanceRemaining != nil {
-                    WidgetCreditsBlock(snapshot: snapshot, valueSize: 20)
+                // 小尺寸空间有限：多块资源包时只显示合计，单块或余额型显示详情
+                if snapshot.hasAnyBalance {
+                    WidgetCreditsBlock(snapshot: snapshot, valueSize: 18)
                         .layoutPriority(1)
+                        // 紧凑行的标签格是可变宽度，会把整行剩余宽度全吃掉，数值列被挤窄后
+                        // 每行按各自溢出量缩字号（「100」正常、「1,633」偏小）。按理想宽度排
+                        // 就不抢数值列，两行数值同为 12pt。
+                        .fixedSize(
+                            horizontal: widgetSmallRowsUseFullWidth(snapshot), vertical: false)
+                        .padding(
+                            .bottom,
+                            widgetSmallRowsUseFullWidth(snapshot) ? widgetSmallBottomLift : 0)
                 }
-            } else if let balance = snapshot.balanceRemaining {
-                Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                Text(widgetBalanceLabel(snapshot.balanceUnit))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            } else if snapshot.hasAnyBalance {
+                // 纯余额型（如 DeepSeek）
+                if let firstPackage = snapshot.resourcePackages.first {
+                    Text(widgetBalanceValue(firstPackage.remaining, unit: firstPackage.unit))
+                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(firstPackage.label ?? widgetBalanceLabel(firstPackage.unit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if let balance = snapshot.balanceRemaining {
+                    Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
+                        .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(widgetBalanceLabel(snapshot.balanceUnit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                // 余额型也要显示「剩 X / 共 Y」明细行（用户点名的信息）
+                if let quota = widgetQuotaText(snapshot) {
+                    Text(quota)
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.top, 2)
+                }
                 Spacer(minLength: 0)
                 // 余额型没有进度条可压底，用更新时间填住底部，
                 // 否则内容会浮在中间、下半张卡显得空。
@@ -270,12 +340,45 @@ private func widgetQuotaText(_ snapshot: WidgetSnapshot) -> String? {
 ///
 /// Credits 是用量包（千问、Qoder），和主窗口百分比不是一回事，单独起一行标签；
 /// 金额型（Cursor）保持「$0.00 剩余」的紧凑写法。
+/// 多块资源包时全部用紧凑行（标签 + 数值），避免首块大字、后续小字的不一致观感，
+/// 也让底栏高度可控、页脚不被截断。
 private struct WidgetCreditsBlock: View {
     let snapshot: WidgetSnapshot
     var valueSize: CGFloat = 18
 
+    /// 多块资源包时切换到紧凑模式：每块一行，标签约 9pt、数值约 12pt。
+    private var isCompactMode: Bool {
+        snapshot.resourcePackages.count >= 2
+    }
+
     var body: some View {
-        if let balance = snapshot.balanceRemaining {
+        if let firstPackage = snapshot.resourcePackages.first {
+            if isCompactMode {
+                // 紧凑模式：两列对齐 Grid，所有资源包统一样式。
+                compactPackageRows
+            } else if widgetIsCreditsUnit(firstPackage.unit) {
+                // 单块 Credits：保持原有大字号 hero 风格。
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(firstPackage.label ?? widgetBalanceLabel(firstPackage.unit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(widgetBalanceValue(firstPackage.remaining, unit: firstPackage.unit))
+                        .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            } else {
+                // 单块非 Credits（如 Cursor 金额型）：紧凑写法。
+                Text("\(widgetBalanceValue(firstPackage.remaining, unit: firstPackage.unit)) 剩余")
+                    .font(.system(size: valueSize, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        } else if let balance = snapshot.balanceRemaining {
+            // 兼容旧数据：没有 resourcePackages 时退回 balanceRemaining。
             if widgetIsCreditsUnit(snapshot.balanceUnit) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(widgetBalanceLabel(snapshot.balanceUnit))
@@ -297,6 +400,38 @@ private struct WidgetCreditsBlock: View {
             }
         }
     }
+
+    /// 紧凑行：两列对齐结构（Grid），标签一列、数值一列，两块包的数值上下对齐。
+    /// 标签 lineLimit(1) + minimumScaleFactor 保证不折行、不省略；
+    /// 窄上下文下去掉「Credits」单位后缀，只显示数字。
+    private var compactPackageRows: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 6, verticalSpacing: 2) {
+            ForEach(Array(snapshot.resourcePackages.enumerated()), id: \.offset) { _, package in
+                GridRow {
+                    Text(package.label ?? widgetBalanceLabel(package.unit))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(compactBalanceValue(package.remaining, unit: package.unit))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+            }
+        }
+    }
+
+    /// 窄上下文下的余额数值：去掉「Credits」单位后缀，只显示数字 + monospacedDigit 对齐。
+    private func compactBalanceValue(_ value: Double, unit: String?) -> String {
+        if widgetIsCreditsUnit(unit) {
+            return widgetCount(value)
+        }
+        return CurrencySymbol.format(value, unit: unit ?? "")
+    }
 }
 
 /// 其余窗口压成一行，例如「每周 72.5% · 每月 80.0%」。
@@ -313,6 +448,17 @@ private func widgetUsageFooter(_ snapshot: WidgetSnapshot) -> String {
     if let days = snapshot.remainingDays {
         parts.append("套餐剩 \(days) 天")
     }
+    if let reset = snapshot.primaryResetsAt, let text = widgetResetText(reset) {
+        parts.append(text)
+    }
+    parts.append(widgetTimeText(snapshot.updatedAt))
+    return parts.joined(separator: " · ")
+}
+
+/// 降级版 footer：去掉「套餐剩 X 天」，只保留重置时间 + 更新时间。
+/// 用于窄上下文（小尺寸、双栏中尺寸）空间不够时。
+private func widgetUsageFooterDegraded(_ snapshot: WidgetSnapshot) -> String {
+    var parts: [String] = []
     if let reset = snapshot.primaryResetsAt, let text = widgetResetText(reset) {
         parts.append(text)
     }
@@ -348,9 +494,9 @@ struct MediumWidgetView: View {
 
     var body: some View {
         if snapshots.count == 1, let only = snapshots.first {
-            SourceColumn(snapshot: only, valueSize: 46)
+            // 单来源中尺寸：采用更美观的空间布局
+            SingleSourceMediumView(snapshot: only)
                 .padding(.trailing, widgetRefreshClearance)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             // GeometryReader 给出明确高度后，栏内 Spacer 才能把底栏压到底并对齐。
             // 可用宽度要扣掉刷新按钮占位，否则最后一栏标题/徽章会画进按钮下面。
@@ -373,6 +519,130 @@ struct MediumWidgetView: View {
     }
 }
 
+/// 单来源中尺寸的专用美化布局。
+/// Qoder 单来源时：
+/// - 上区：超大百分比 + 同色进度条
+/// - 下区：横向并列所有资源包（各带标签）与更新时间（填满宽度）
+private struct SingleSourceMediumView: View {
+    let snapshot: WidgetSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // 标题行
+            WidgetSourceHeader(snapshot: snapshot)
+
+            if snapshot.isBalanceOnly {
+                // 纯余额型（如 DeepSeek）：居中大数字
+                Spacer(minLength: 2)
+                if let balance = snapshot.balanceRemaining {
+                    Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
+                        .font(.system(size: 42, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .foregroundStyle(.primary)
+                }
+                Text(widgetBalanceLabel(snapshot.balanceUnit))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                // 「剩 X / 共 Y Credits」明细行：余额型也要显示，用户点名的关键信息
+                if let quota = widgetQuotaText(snapshot) {
+                    Text(quota)
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 4)
+            } else {
+                // 百分比型（Qoder、Cursor）：大数字 + 进度条
+                if let ratio = snapshot.primaryRemainingRatio {
+                    Text(widgetPercent(ratio))
+                        .font(.system(size: 40, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
+                }
+
+                if let ratio = snapshot.primaryRemainingRatio {
+                    WidgetProgressBar(remainingRatio: ratio, height: 6)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 6)
+                }
+
+                // 「剩 X / 共 Y Credits」明细行：始终显示，只缩字号不消失。
+                // 这是用户点名的关键信息，任何降级路径都不能删除。
+                if let quota = widgetQuotaText(snapshot) {
+                    Text(quota)
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+            }
+
+            Spacer(minLength: 2)
+
+            // 底部横向并列：所有资源包 + 更新时间
+            HStack(alignment: .center, spacing: 12) {
+                if !snapshot.isBalanceOnly {
+                    // 多块资源包时并列显示，每块用自己的标签
+                    WidgetResourcePackagesRow(packages: snapshot.resourcePackages)
+                }
+
+                Spacer()
+
+                Text(widgetTimeText(snapshot.updatedAt))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.vertical, 8)
+    }
+}
+
+/// 小组件里并列显示多块资源包。
+///
+/// 每块资源包显示标签 + 剩余值。空间有限时只放得下 2 块，多余的合并到「合计」。
+private struct WidgetResourcePackagesRow: View {
+    let packages: [WidgetResourcePackage]
+
+    var body: some View {
+        if packages.isEmpty {
+            // 兼容旧数据：没有 resourcePackages 时退回 balanceRemaining（由调用方处理）
+            EmptyView()
+        } else if packages.count == 1, let only = packages.first {
+            singlePackageView(only)
+        } else {
+            // 多块包：横向并列，每块显示标签 + 数值
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                ForEach(Array(packages.enumerated()), id: \.offset) { _, package in
+                    singlePackageView(package)
+                }
+            }
+        }
+    }
+
+    private func singlePackageView(_ package: WidgetResourcePackage) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(package.label ?? widgetBalanceLabel(package.unit))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(widgetBalanceValue(package.remaining, unit: package.unit))
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+    }
+}
+
 /// 栏目标题。有套餐档次时显示「厂商 + 徽章」（如 Cursor Premium），
 /// 避免再拼「订阅用量」把右上角刷新按钮挤叠；没有档次时用完整显示名。
 private struct WidgetSourceHeader: View {
@@ -389,19 +659,22 @@ private struct WidgetSourceHeader: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(titleText)
-                .font(.caption2.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.4)
+                .allowsTightening(true)
+                .layoutPriority(1)
             if let plan = snapshot.planName, !plan.isEmpty {
                 Text(plan)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(.tint)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 0)
                     .background(.tint.opacity(0.15), in: Capsule())
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(0.5)
             }
             Spacer(minLength: 0)
         }
@@ -418,7 +691,7 @@ private struct SourceColumn: View {
     private let barHeight: CGFloat = 5
 
     private var isBalanceOnly: Bool {
-        snapshot.primaryRemainingRatio == nil && snapshot.balanceRemaining != nil
+        snapshot.primaryRemainingRatio == nil && snapshot.hasAnyBalance
     }
 
     /// DeepSeek 余额刻意比右边百分比更大。
@@ -445,16 +718,36 @@ private struct SourceColumn: View {
             Spacer(minLength: 4)
 
             VStack(alignment: .leading, spacing: 3) {
-                if let balance = snapshot.balanceRemaining {
+                if let firstPackage = snapshot.resourcePackages.first {
+                    Text(widgetBalanceValue(firstPackage.remaining, unit: firstPackage.unit))
+                        .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text(firstPackage.label ?? widgetBalanceLabel(firstPackage.unit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if let balance = snapshot.balanceRemaining {
                     Text(widgetBalanceValue(balance, unit: snapshot.balanceUnit))
                         .font(.system(size: balanceHeroSize, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
+                    Text(widgetBalanceLabel(snapshot.balanceUnit))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                Text(widgetBalanceLabel(snapshot.balanceUnit))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+
+                // 余额型也要显示「剩 X / 共 Y」明细行（用户点名的信息）
+                if let quota = widgetQuotaText(snapshot) {
+                    Text(quota)
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.top, 2)
+                }
             }
 
             Spacer(minLength: 4)
@@ -467,8 +760,32 @@ private struct SourceColumn: View {
     }
 
     /// 标题(+徽章) → 百分比 + 周期剩余 + 进度条 → 其余窗口 → Credits/底栏。
+    ///
+    /// 用 ViewThatFits 给出由富到简的两个变体，SwiftUI 自动选第一个放得下的。
+    /// 所有变体都保留「剩 X / 共 Y」明细行（用户点名的信息），只能缩字号不能消失。
+    /// 降级优先级：周期标题 → 资源包压缩 → footer 精简。
     private var usageColumn: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        ViewThatFits(in: .vertical) {
+            usageColumnVariantA  // 完整布局（含周期标题）
+            usageColumnVariantB  // 去掉周期标题行，明细行保留
+        }
+    }
+
+    /// 变体 A：完整布局（标题、百分比、周期标题、进度条、剩/共明细、资源包、footer）。
+    private var usageColumnVariantA: some View {
+        usageColumnCore(showPeriodTitle: true)
+    }
+
+    /// 变体 B：去掉单独的周期标题行（如「每月剩余」），周期信息并进明细行。
+    /// 「剩 X / 共 Y Credits」明细行必须保留，只缩字号不消失。
+    private var usageColumnVariantB: some View {
+        usageColumnCore(showPeriodTitle: false)
+    }
+
+    /// 核心布局，通过参数控制是否显示周期标题行。
+    /// 「剩 X / 共 Y」明细行始终显示，只通过 minimumScaleFactor 缩小字号。
+    private func usageColumnCore(showPeriodTitle: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             WidgetSourceHeader(snapshot: snapshot)
 
             if let ratio = snapshot.primaryRemainingRatio {
@@ -480,9 +797,11 @@ private struct SourceColumn: View {
                     .foregroundStyle(WidgetPalette.color(remainingRatio: ratio))
             }
 
-            Text(snapshot.primaryTitle.map { "\($0)剩余" } ?? "套餐剩余")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if showPeriodTitle {
+                Text(snapshot.primaryTitle.map { "\($0)剩余" } ?? "套餐剩余")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             if let ratio = snapshot.primaryRemainingRatio {
                 WidgetProgressBar(remainingRatio: ratio, height: barHeight)
@@ -490,13 +809,15 @@ private struct SourceColumn: View {
                     .frame(height: barHeight)
             }
 
+            // 「剩 X / 共 Y Credits」明细行：始终显示，只缩字号不消失。
+            // 这是用户点名的关键信息，任何降级路径都不能删除。
             if let quota = widgetQuotaText(snapshot) {
                 Text(quota)
                     .font(.system(size: 9))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.6)
             }
 
             if let secondary = widgetSecondaryText(snapshot) {
@@ -510,16 +831,26 @@ private struct SourceColumn: View {
             Spacer(minLength: 0)
 
             // 底栏余额提高布局优先级，避免中尺寸双栏高度吃紧时被 Spacer 挤没。
-            if snapshot.balanceRemaining != nil {
+            if snapshot.hasAnyBalance {
                 WidgetCreditsBlock(snapshot: snapshot, valueSize: 20)
                     .layoutPriority(1)
             }
 
-            Text(widgetUsageFooter(snapshot))
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
+            // Footer 用 ViewThatFits 保证单行：优先完整文案，空间不够时去掉「套餐剩 X 天」。
+            // 绝不允许折行后被底边裁切。
+            ViewThatFits(in: .horizontal) {
+                Text(widgetUsageFooter(snapshot))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(widgetUsageFooterDegraded(snapshot))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .layoutPriority(1)
         }
     }
 }
@@ -589,7 +920,7 @@ struct QuotaWidget: Widget {
             QuotaWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("大模型额度")
-        .description("小尺寸显示一个来源，中尺寸并排显示两个。右键可勾选来源。")
+        .description("用开关选择来源，最多同时打开两个。主界面关掉的来源都不会画出来。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

@@ -34,9 +34,11 @@ final class AppEnvironment {
         await store.refreshAll()
     }
 
-    /// 启用列表变化后，对齐结果并立即刷一次。
+    /// 启用列表变化后，先让小组件丢掉已关闭的来源，再补一轮数据。
     func providersDidChange() {
-        store.syncWithSettings()
+        store.alignWidgetWithSettings()
+        // 小组件扩展可能自己抓过已关闭的来源，缓存内容没变也要重画时间线。
+        WidgetCenter.shared.reloadAllTimelines()
         Task { await refresh() }
     }
 }

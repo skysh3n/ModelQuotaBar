@@ -9,6 +9,11 @@ enum QoderTests {
         ("缺少配额数据时报解析错误", testMissingQuotaThrows),
         ("Cookie 归一化", testCookieNormalization),
         ("缺少 Cookie 时在发请求前报错", testMissingCookieFailsBeforeRequest),
+        ("专属资源包存在时解析出两块", testParsesDedicatedResourcePackage),
+        ("专属资源包的 display_labels 取 zh-CN 标题", testDisplayLabelsTitle),
+        ("total_quota 不被当成第三块", testTotalQuotaNotParsedAsPackage),
+        ("只有附加包时是一块", testOnlyAddonPackageIsOne),
+        ("两者都无时保持报错", testNoPackagesThrows),
     ])
 
     static func testParsesPlanAndAddonQuota() throws {
@@ -98,6 +103,98 @@ enum QoderTests {
         }
     }
 
+    // MARK: - 专属资源包测试
+
+    static func testParsesDedicatedResourcePackage() throws {
+        let snapshot = try makeSnapshot(
+            user: userInfo,
+            plan: planInfo,
+            credits: creditsWithDedicatedPayload)
+
+        // 应有两块资源包：附加 + 专属
+        try Expect.equal(snapshot.resourcePackages.count, 2)
+
+        // 第一块是附加资源包
+        let addon = snapshot.resourcePackages[0]
+        try Expect.equal(addon.remaining, 0)
+        try Expect.equal(addon.total, 1000)
+        try Expect.equal(addon.label, "附加资源包")
+
+        // 第二块是专属资源包
+        let dedicated = snapshot.resourcePackages[1]
+        try Expect.equal(dedicated.remaining, 1995)
+        try Expect.equal(dedicated.total, 2000)
+        try Expect.equal(dedicated.label, "Qwen 专属积分")
+
+        // balance 取第一块（向后兼容）
+        let balance = try Expect.notNil(snapshot.balance)
+        try Expect.equal(balance.remaining, 0)
+    }
+
+    static func testDisplayLabelsTitle() throws {
+        let snapshot = try makeSnapshot(
+            user: userInfo,
+            plan: planInfo,
+            credits: creditsWithDedicatedPayload)
+
+        // 专属包的标题应从 display_labels 取 zh-CN
+        let dedicated = snapshot.resourcePackages[1]
+        try Expect.equal(dedicated.label, "Qwen 专属积分")
+    }
+
+    static func testTotalQuotaNotParsedAsPackage() throws {
+        let snapshot = try makeSnapshot(
+            user: userInfo,
+            plan: planInfo,
+            credits: creditsWithDedicatedPayload)
+
+        // total_quota 不应被解析为第三块包
+        try Expect.equal(snapshot.resourcePackages.count, 2)
+
+        // 各包的 remaining 之和应小于 total_quota（9000），避免重复计数
+        let totalRemaining = snapshot.resourcePackages.reduce(0.0) { $0 + $1.remaining }
+        try Expect.isTrue(totalRemaining < 9000)
+    }
+
+    static func testOnlyAddonPackageIsOne() throws {
+        let snapshot = try makeSnapshot(
+            user: userInfo,
+            plan: planInfo,
+            credits: creditsPayload)  // 没有 dedicated
+
+        // 只有附加包时是一块
+        try Expect.equal(snapshot.resourcePackages.count, 1)
+        try Expect.equal(snapshot.resourcePackages[0].label, "附加资源包")
+    }
+
+    static func testNoPackagesThrows() throws {
+        // plan_quota 有数据但两个资源包都为空，不应报错（仍有窗口）
+        let onlyPlan = """
+        {
+          "plan_quota": {
+            "quota_summary": {"used_value":10,"limit_value":1000,"remaining_value":990,"unit":"credits"}
+          },
+          "resource_package_quota": null,
+          "dedicated_resource_package_quota": null
+        }
+        """
+        let snapshot = try makeSnapshot(user: userInfo, plan: planInfo, credits: onlyPlan)
+        try Expect.equal(snapshot.resourcePackages.count, 0)
+        try Expect.equal(snapshot.windows.count, 1)
+
+        // 完全没有数据时才报错
+        let emptyCredits = """
+        { "plan_quota": null, "resource_package_quota": null, "dedicated_resource_package_quota": null }
+        """
+        try Expect.throwsError(
+            try makeSnapshot(user: userInfo, plan: planInfo, credits: emptyCredits)
+        ) { error in
+            guard case QuotaError.decoding = error else {
+                throw AssertionFailure(message: "应为 decoding，实际 \(error)", file: #filePath, line: #line)
+            }
+        }
+    }
+
     // MARK: - 工具
 
     private static let userInfo = """
@@ -118,6 +215,42 @@ enum QoderTests {
       },
       "total_quota": {
         "quota_summary": {"used_value":495,"limit_value":2500,"remaining_value":2005,"usage_percentage":20,"unit":"credits"}
+      },
+      "nextResetAt": 1796313600000
+    }
+    """
+
+    /// 包含专属资源包的真实响应结构（脱敏）
+    private static let creditsWithDedicatedPayload = """
+    {
+      "plan_quota": {
+        "quota_summary": {"used_value":26,"limit_value":6000,"remaining_value":5974,"usage_percentage":0,"unit":"credits"}
+      },
+      "resource_package_quota": {
+        "quota_summary": {"used_value":1000,"limit_value":1000,"remaining_value":0,"usage_percentage":100,"unit":"credits"},
+        "quota_detail": [
+          {"source": "RESOURCE_PACKAGE_SOURCE_BONUS", "remaining_value": 0, "limit_value": 500, "expires_at": 1800000000000},
+          {"source": "RESOURCE_PACKAGE_SOURCE_CARRY_OVER", "remaining_value": 0, "limit_value": 500, "expires_at": 1798000000000}
+        ]
+      },
+      "dedicated_resource_package_quota": {
+        "quota_summary": {"used_value":5,"limit_value":2000,"remaining_value":1995,"usage_percentage":0,"unit":"credits"},
+        "quota_detail": [
+          {
+            "source": "DEDICATED_RESOURCE_PACKAGE",
+            "remaining_value": 1995,
+            "limit_value": 2000,
+            "expires_at": 1800000000000,
+            "name": "Qwen Package",
+            "display_labels": [
+              {"dimension": "title", "value": "qwen model series", "value_i18n": {"en-US": "Qwen Exclusive Credits", "zh-CN": "Qwen 专属积分"}},
+              {"dimension": "description", "value_i18n": {"zh-CN": "Qwen 专属积分：在模型选择器中选择 Qwen 系列模型时优先抵扣该积分。"}}
+            ]
+          }
+        ]
+      },
+      "total_quota": {
+        "quota_summary": {"used_value":1031,"limit_value":9000,"remaining_value":7969,"usage_percentage":11,"unit":"credits"}
       },
       "nextResetAt": 1796313600000
     }

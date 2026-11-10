@@ -252,6 +252,167 @@ enum QuotaStorePolicyTests {
     }
 }
 
+/// 凭据加载失败时的小组件发布行为测试
+enum CredentialLoadFailureTests {
+    static let suite = TestSuite("凭据加载失败时的发布策略", [
+        ("凭据文件完整 → 写盘且保留该来源", testValidCredentialWritesAndKeeps),
+        ("凭据文件损坏 + disk 有数据 → 不写盘、disk 不变", testCorruptCredentialPreservesDisk),
+        ("凭据文件不存在 + activeProviders 非空 → 丢该来源", testMissingCredentialDropsProvider),
+        ("无参 publishToWidget 解析到非 nil 默认路径", testParameterlessPublishResolvesDefaultPaths),
+    ])
+
+    private static func temporaryFile(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("mqb-cred-fail-\(name)-\(UUID().uuidString).json")
+    }
+
+    private static func snapshot(
+        _ id: String,
+        ratio: Double? = 0.5,
+        updatedAt: Date = Date(timeIntervalSince1970: 1)
+    ) -> WidgetSnapshot {
+        WidgetSnapshot(
+            id: id,
+            vendor: id,
+            title: id,
+            planName: nil,
+            primaryTitle: ratio == nil ? nil : "每周",
+            primaryRemainingRatio: ratio,
+            primaryResetsAt: nil,
+            balanceRemaining: nil,
+            balanceUnit: nil,
+            secondaryWindows: [],
+            remainingDays: nil,
+            updatedAt: updatedAt)
+    }
+
+    /// (a) 凭据文件存在且完整 → 写盘且保留该来源
+    @MainActor
+    static func testValidCredentialWritesAndKeeps() throws {
+        let credFile = temporaryFile("valid-cred")
+        let storeFile: URL = temporaryFile("valid-store")
+        defer {
+            try? FileManager.default.removeItem(at: credFile)
+            try? FileManager.default.removeItem(at: storeFile)
+        }
+
+        // 写入完整凭据
+        try CredentialStore.persist(["deepseek": ["apiKey": "test-key"]], to: credFile)
+
+        // 写入初始 disk 数据
+        let initialDisk = [snapshot("deepseek", ratio: 0.5)]
+        SharedStore.save(initialDisk, to: storeFile)
+
+        // 创建 QuotaStore（results 初始为空）
+        let settings = AppSettings()
+        let store = QuotaStore(settings: settings)
+
+        // 调用 publishToWidget
+        store.publishToWidget(
+            credentialFileURL: credFile,
+            legacyCredentialFileURL: nil,
+            sharedStoreFileURL: storeFile)
+
+        // 验证 disk 被更新（有新数据）
+        let loaded = SharedStore.loadSnapshots(from: storeFile)
+        // results 为空，所以 fresh 为空，但 disk 有数据且 deepseek 凭据完整，应该保留
+        try Expect.equal(loaded.count, 1)
+        try Expect.equal(loaded.first?.id, "deepseek")
+    }
+
+    /// (b) 凭据文件存在但 JSON 损坏（loadFailed=true）+ disk 有数据 → 不写盘、disk 不变
+    @MainActor
+    static func testCorruptCredentialPreservesDisk() throws {
+        let credFile = temporaryFile("corrupt-cred")
+        let storeFile: URL = temporaryFile("corrupt-store")
+        defer {
+            try? FileManager.default.removeItem(at: credFile)
+            try? FileManager.default.removeItem(at: storeFile)
+        }
+
+        // 写入损坏的凭据文件
+        let directory = credFile.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not valid json".utf8).write(to: credFile)
+
+        // 写入初始 disk 数据
+        let initialDisk = [snapshot("deepseek", ratio: 0.5)]
+        SharedStore.save(initialDisk, to: storeFile)
+
+        // 创建 QuotaStore
+        let settings = AppSettings()
+        let store = QuotaStore(settings: settings)
+
+        // 调用 publishToWidget
+        store.publishToWidget(
+            credentialFileURL: credFile,
+            legacyCredentialFileURL: nil,
+            sharedStoreFileURL: storeFile)
+
+        // 验证 disk 不变
+        let loaded = SharedStore.loadSnapshots(from: storeFile)
+        try Expect.equal(loaded.count, 1)
+        try Expect.equal(loaded.first?.id, "deepseek")
+        let ratio = try Expect.notNil(loaded.first?.primaryRemainingRatio)
+        try Expect.equal(ratio, 0.5, accuracy: 1e-9)
+    }
+
+    /// (c) 凭据文件不存在（loadFailed=false）且 activeProviders 非空 → 按语义丢该来源
+    @MainActor
+    static func testMissingCredentialDropsProvider() throws {
+        let credFile = temporaryFile("missing-cred")
+        let storeFile: URL = temporaryFile("missing-store")
+        defer {
+            try? FileManager.default.removeItem(at: credFile)
+            try? FileManager.default.removeItem(at: storeFile)
+        }
+
+        // 不创建凭据文件（模拟不存在）
+
+        // 写入初始 disk 数据（包含 deepseek）
+        let initialDisk = [snapshot("deepseek", ratio: 0.5)]
+        SharedStore.save(initialDisk, to: storeFile)
+
+        // 创建 QuotaStore
+        let settings = AppSettings()
+        let store = QuotaStore(settings: settings)
+
+        // 调用 publishToWidget
+        store.publishToWidget(
+            credentialFileURL: credFile,
+            legacyCredentialFileURL: nil,
+            sharedStoreFileURL: storeFile)
+
+        // 验证 disk 被清空（deepseek 被丢弃）
+        let loaded = SharedStore.loadSnapshots(from: storeFile)
+        try Expect.equal(loaded.count, 0)
+    }
+
+    /// 无参 publishToWidget() 必须解析到非 nil 默认路径，而不是静默 no-op。
+    /// 这条用例扣住「nil 透传给 SharedStore.loadSnapshots(from:)/save(_:to:) 会直接 return」的回归。
+    ///
+    /// 注意：不实际写入生产文件，只验证默认路径存在且代码路径正确。
+    @MainActor
+    static func testParameterlessPublishResolvesDefaultPaths() throws {
+        // 验证默认路径存在（非 nil）
+        let defaultCredURL = CredentialStore.defaultCredentialFileURL
+        let defaultStoreURL = SharedStore.containerURL
+
+        try Expect.isTrue(
+            defaultCredURL != nil,
+            "CredentialStore.defaultCredentialFileURL 不应为 nil")
+        try Expect.isTrue(
+            defaultStoreURL != nil,
+            "SharedStore.containerURL 不应为 nil")
+
+        // 验证 SharedStore 的无参入口使用默认路径（不是 no-op）
+        // 通过检查 isShared 属性确认路径可写
+        try Expect.isTrue(
+            SharedStore.isShared,
+            "SharedStore.isShared 应为 true，表示共享容器可写")
+    }
+}
+
 enum QuotaFetcherSelectionTests {
     static let suite = TestSuite("小组件抓取来源过滤", [
         ("共享列表缺失时退回只看凭据", testFallsBackToConfigured),

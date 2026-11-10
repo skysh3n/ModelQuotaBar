@@ -205,3 +205,79 @@ enum QuotaWindowTests {
         try Expect.isTrue(window.usedRatio <= 1 && window.remainingRatio >= 0)
     }
 }
+
+// MARK: - 资源包模型测试
+
+enum ResourcePackageTests {
+    static let suite = TestSuite("资源包模型", [
+        ("expiresAt 单一事实来源：外层代理到内层", testExpiresAtSingleSourceOfTruth),
+        ("外层 expiresAt setter 能修改内层", testExpiresAtSetterUpdatesInner),
+        ("Codable 往返保持 expiresAt 一致", testCodableRoundTripConsistent),
+        ("旧 JSON 外层有 expiresAt 但内层没有时能恢复", testLegacyOuterExpiresAtRecovered),
+    ])
+
+    static func testExpiresAtSingleSourceOfTruth() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let balance = CreditBalance(remaining: 100, total: 200, unit: "Credits", label: "测试", expiresAt: date)
+        let package = ResourcePackageInfo(balance: balance)
+
+        // 外层 expiresAt 应直接读取内层
+        try Expect.equal(package.expiresAt, date)
+        try Expect.equal(package.balance.expiresAt, date)
+    }
+
+    static func testExpiresAtSetterUpdatesInner() throws {
+        let package = ResourcePackageInfo(remaining: 100, total: 200, unit: "Credits", label: "测试")
+        try Expect.isNil(package.expiresAt)
+
+        let newDate = Date(timeIntervalSince1970: 1_900_000_000)
+        var mutablePackage = package
+        mutablePackage.expiresAt = newDate
+
+        // setter 应修改内层 balance.expiresAt
+        try Expect.equal(mutablePackage.expiresAt, newDate)
+        try Expect.equal(mutablePackage.balance.expiresAt, newDate)
+    }
+
+    static func testCodableRoundTripConsistent() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let original = ResourcePackageInfo(
+            remaining: 1995,
+            total: 2000,
+            unit: "Credits",
+            label: "Qwen 专属积分",
+            expiresAt: date)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(original)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(ResourcePackageInfo.self, from: data)
+
+        // 内外层 expiresAt 应一致
+        try Expect.equal(decoded.expiresAt, date)
+        try Expect.equal(decoded.balance.expiresAt, date)
+        try Expect.equal(decoded.label, "Qwen 专属积分")
+    }
+
+    static func testLegacyOuterExpiresAtRecovered() throws {
+        // 模拟旧 JSON：外层有独立的 expiresAt，内层 balance 里没有
+        let json = """
+        {
+            "balance": {"remaining": 100, "total": 200, "unit": "Credits"},
+            "expiresAt": "2026-12-09T00:00:00Z"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let package = try decoder.decode(ResourcePackageInfo.self, from: Data(json.utf8))
+
+        // 应从外层恢复到内层 balance.expiresAt
+        let expectedDate = Date(timeIntervalSince1970: 1796774400)  // 2026-12-09T00:00:00Z
+        try Expect.equal(package.expiresAt, expectedDate)
+        try Expect.equal(package.balance.expiresAt, expectedDate)
+    }
+}

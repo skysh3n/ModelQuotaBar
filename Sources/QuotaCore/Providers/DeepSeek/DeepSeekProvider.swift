@@ -89,7 +89,7 @@ public enum DeepSeekProvider: QuotaProvider {
         return QuotaSnapshot(
             isAvailable: payload.isAvailable,
             windows: [],
-            balance: CreditBalance(remaining: remaining, total: nil, unit: info.currency),
+            balance: CreditBalance(remaining: remaining, total: nil, unit: info.currency, label: "账户余额"),
             updatedAt: now)
     }
 

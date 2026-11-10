@@ -226,7 +226,8 @@ public enum QwenTokenPlanProvider: QuotaProvider {
         return CreditBalance(
             remaining: remaining,
             total: JSONSearch.number(payload["totalCredits"]),
-            unit: "Credits"
+            unit: "Credits",
+            label: "用量包剩余"
         )
     }
 }

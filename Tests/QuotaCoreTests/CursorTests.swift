@@ -131,6 +131,8 @@ enum CursorTests {
         let balance = try Expect.notNil(snapshot.balance)
         try Expect.equal(balance.remaining, 26.0, accuracy: 1e-9)
         try Expect.equal(balance.unit, "USD")
+        // Cursor 的余额标签应该是「剩余 Credits」
+        try Expect.equal(balance.label, "剩余 Credits")
         let widget = snapshot.widgetSnapshot(id: CursorProvider.metadata.id, vendor: "Cursor")
         try Expect.equal(try Expect.notNil(widget.balanceRemaining), 26.0, accuracy: 1e-9)
         try Expect.equal(widget.balanceUnit, "USD")

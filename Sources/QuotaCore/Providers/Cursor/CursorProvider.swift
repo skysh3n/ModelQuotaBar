@@ -455,7 +455,7 @@ public enum CursorProvider: QuotaProvider {
             }
         }
         guard found else { return nil }
-        return CreditBalance(remaining: cents / 100, unit: "USD")
+        return CreditBalance(remaining: cents / 100, unit: "USD", label: "剩余 Credits")
     }
 
     static func creditGrants(in payload: Any?) -> [[String: Any]]? {
@@ -712,14 +712,16 @@ extension CursorProvider {
                 // 避免把正确余额冲成 0。
                 if let entry = load(from: url), isValid(entry, now: now) {
                     var result = snapshot
-                    result.balance = CreditBalance(remaining: entry.remaining, unit: entry.unit)
+                    result.resourcePackages = [ResourcePackageInfo(
+                        balance: CreditBalance(remaining: entry.remaining, unit: entry.unit, label: "剩余 Credits"))]
                     return result
                 }
                 return snapshot
             }
             guard let entry = load(from: url), isValid(entry, now: now) else { return snapshot }
             var result = snapshot
-            result.balance = CreditBalance(remaining: entry.remaining, unit: entry.unit)
+            result.resourcePackages = [ResourcePackageInfo(
+                balance: CreditBalance(remaining: entry.remaining, unit: entry.unit, label: "剩余 Credits"))]
             return result
         }
 

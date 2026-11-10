@@ -17,6 +17,11 @@ public enum CredentialStore {
         SharedStore.containerURL?.appendingPathComponent(fileName)
     }
 
+    /// 默认凭据文件路径（供测试访问）。
+    public static var defaultCredentialFileURL: URL? {
+        fileURL
+    }
+
     /// 旧版本把凭据存在 Application Support 里，迁移过来，免得用户重填。
     private static var legacyFileURL: URL? {
         guard let base = try? FileManager.default.url(
@@ -31,18 +36,24 @@ public enum CredentialStore {
     }
 
     /// 所有 Provider 的凭据，按 ProviderID 索引。带 URL 参数是为了单测，生产路径用上面的默认值。
-    static func loadAll(from fileURL: URL?, legacyURL: URL?) -> [String: [String: String]] {
+    /// 返回 (credentials, loadFailed)：loadFailed 表示文件读失败或解析失败，调用方据此区分「真的没凭据」和「读不出来」。
+    static func loadAll(from fileURL: URL?, legacyURL: URL?) -> (credentials: [String: [String: String]], loadFailed: Bool) {
         if let fileURL,
            let data = try? Data(contentsOf: fileURL),
            let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         {
-            return decoded
+            return (decoded, false)
         }
         // 共享容器里还没有（或读不出来），看看旧位置有没有，有就搬过来。
         guard let legacyURL,
               let data = try? Data(contentsOf: legacyURL),
               let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
-        else { return [:] }
+        else {
+            // 两个位置都读不出来：如果 fileURL 存在（文件存在但解析失败），算 loadFailed；
+            // 如果 fileURL 不存在，算「真的没凭据」。
+            let fileExists = fileURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            return ([:], fileExists)
+        }
         // 只有新位置写成功才删旧文件，避免共享目录不可写时永久丢凭据。
         do {
             try persist(decoded, to: fileURL)
@@ -50,7 +61,7 @@ public enum CredentialStore {
         } catch {
             // 本进程仍可用内存里这份；下次启动还会再尝试迁移。
         }
-        return decoded
+        return (decoded, false)
     }
 
     static func persist(_ all: [String: [String: String]], to fileURL: URL?) throws {
@@ -74,7 +85,24 @@ public enum CredentialStore {
         from fileURL: URL?,
         legacyURL: URL?
     ) -> ProviderCredential {
-        ProviderCredential(loadAll(from: fileURL, legacyURL: legacyURL)[providerID.rawValue] ?? [:])
+        let (credentials, _) = loadAll(from: fileURL, legacyURL: legacyURL)
+        return ProviderCredential(credentials[providerID.rawValue] ?? [:])
+    }
+
+    /// 内部入口：返回 (credential, loadFailed)，供 publishToWidget 等需要区分失败/为空的场景使用。
+    static func loadCredentialWithStatus(
+        for providerID: ProviderID,
+        from fileURL: URL?,
+        legacyURL: URL?
+    ) -> (credential: ProviderCredential, loadFailed: Bool) {
+        let (credentials, loadFailed) = loadAll(from: fileURL, legacyURL: legacyURL)
+        return (ProviderCredential(credentials[providerID.rawValue] ?? [:]), loadFailed)
+    }
+
+    /// 内部入口：使用默认路径，返回 (credential, loadFailed)。
+    /// publishToWidget 等生产调用点用这个，不要从外部传 nil。
+    static func loadCredentialWithStatus(for providerID: ProviderID) -> (credential: ProviderCredential, loadFailed: Bool) {
+        loadCredentialWithStatus(for: providerID, from: fileURL, legacyURL: legacyFileURL)
     }
 
     public static func save(_ credential: ProviderCredential, for providerID: ProviderID) throws {
@@ -87,7 +115,8 @@ public enum CredentialStore {
         to fileURL: URL?,
         legacyURL: URL?
     ) throws {
-        var all = loadAll(from: fileURL, legacyURL: legacyURL)
+        let (allRaw, _) = loadAll(from: fileURL, legacyURL: legacyURL)
+        var all = allRaw
         let values = credential.allValues
         if values.isEmpty {
             all.removeValue(forKey: providerID.rawValue)
@@ -102,7 +131,8 @@ public enum CredentialStore {
     }
 
     static func delete(for providerID: ProviderID, from fileURL: URL?, legacyURL: URL?) {
-        var all = loadAll(from: fileURL, legacyURL: legacyURL)
+        let (allRaw, _) = loadAll(from: fileURL, legacyURL: legacyURL)
+        var all = allRaw
         all.removeValue(forKey: providerID.rawValue)
         try? persist(all, to: fileURL)
     }

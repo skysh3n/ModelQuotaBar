@@ -12,6 +12,11 @@ enum SharedStoreTests {
         ("内容比较忽略更新时间", testSnapshotContentComparison),
         ("启用列表可读写", testEnabledListRoundTrip),
         ("完整快照缓存可读写", testSnapshotCacheRoundTrip),
+        ("旧格式 WidgetSnapshot JSON 能解码成单块资源包", testLegacyWidgetSnapshotDecodes),
+        ("新格式 WidgetSnapshot 带多块资源包可往返", testWidgetSnapshotResourcePackagesRoundTrip),
+        ("WidgetSnapshot 同时有 resourcePackages 和 balanceRemaining 时不重复重建", testWidgetSnapshotBothFieldsNoDuplicate),
+        ("QuotaSnapshot 同时有 resourcePackages 和 balance 时以 resourcePackages 为准", testQuotaSnapshotBothFieldsPriority),
+        ("QuotaSnapshot resourcePackages 为空数组且 balance 有值时重建单块", testQuotaSnapshotEmptyPackagesWithBalance),
     ])
 
     private static let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
@@ -163,13 +168,185 @@ enum SharedStoreTests {
         try Expect.equal(loaded["cursor"], snapshot)
         try Expect.equal(loaded.count, 1)
     }
+
+    // MARK: - 资源包向后兼容测试
+
+    /// 旧格式 JSON（只有 balanceRemaining/balanceUnit，没有 resourcePackages）能解码成单块资源包
+    static func testLegacyWidgetSnapshotDecodes() throws {
+        // 模拟旧版 JSON：没有 resourcePackages 字段
+        let legacyJSON = """
+        {
+            "id": "qoder",
+            "vendor": "Qoder CN",
+            "title": "Qoder CN Credits 用量",
+            "planName": "专业版",
+            "primaryTitle": "每月",
+            "primaryRemainingRatio": 0.95,
+            "primaryResetsAt": "2026-12-09T00:00:00Z",
+            "primaryTotalQuota": 6000,
+            "primaryUnit": "Credits",
+            "balanceRemaining": 100,
+            "balanceUnit": "Credits",
+            "secondaryWindows": [],
+            "remainingDays": 30,
+            "updatedAt": "2026-11-09T12:00:00Z"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(WidgetSnapshot.self, from: Data(legacyJSON.utf8))
+
+        // 应从 balanceRemaining/balanceUnit 重建单块资源包
+        try Expect.equal(snapshot.resourcePackages.count, 1)
+        try Expect.equal(snapshot.resourcePackages[0].remaining, 100)
+        try Expect.equal(snapshot.resourcePackages[0].unit, "Credits")
+        try Expect.isNil(snapshot.resourcePackages[0].label)  // 旧数据没有标签
+
+        // balanceRemaining 也应保留
+        try Expect.equal(try Expect.notNil(snapshot.balanceRemaining), 100, accuracy: 1e-9)
+    }
+
+    /// 新格式 WidgetSnapshot 带多块资源包可往返编解码
+    static func testWidgetSnapshotResourcePackagesRoundTrip() throws {
+        let expiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = WidgetSnapshot(
+            id: "qoder",
+            vendor: "Qoder CN",
+            title: "Qoder CN Credits 用量",
+            planName: "专业版",
+            primaryTitle: "每月",
+            primaryRemainingRatio: 0.995,
+            primaryResetsAt: expiresAt,
+            primaryTotalQuota: 6000,
+            primaryUnit: "Credits",
+            balanceRemaining: 0,
+            balanceUnit: "Credits",
+            resourcePackages: [
+                WidgetResourcePackage(
+                    label: "附加资源包",
+                    remaining: 0,
+                    total: 1000,
+                    unit: "Credits",
+                    expiresAt: expiresAt),
+                WidgetResourcePackage(
+                    label: "Qwen 专属积分",
+                    remaining: 1995,
+                    total: 2000,
+                    unit: "Credits",
+                    expiresAt: expiresAt),
+            ],
+            secondaryWindows: [],
+            remainingDays: 30,
+            updatedAt: Date(timeIntervalSince1970: 1_792_806_998))
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(snapshot)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(WidgetSnapshot.self, from: data)
+
+        try Expect.equal(decoded.resourcePackages.count, 2)
+        try Expect.equal(decoded.resourcePackages[0].label, "附加资源包")
+        try Expect.equal(decoded.resourcePackages[0].remaining, 0)
+        try Expect.equal(decoded.resourcePackages[1].label, "Qwen 专属积分")
+        try Expect.equal(decoded.resourcePackages[1].remaining, 1995)
+    }
+
+    /// WidgetSnapshot 同时有 resourcePackages 和 balanceRemaining 时不重复重建
+    static func testWidgetSnapshotBothFieldsNoDuplicate() throws {
+        // JSON 里同时有 resourcePackages 数组和 balanceRemaining 标量
+        let json = """
+        {
+            "id": "qoder",
+            "vendor": "Qoder CN",
+            "planName": "专业版",
+            "primaryTitle": "每月",
+            "primaryRemainingRatio": 0.995,
+            "primaryResetsAt": "2026-12-09T00:00:00Z",
+            "primaryTotalQuota": 6000,
+            "primaryUnit": "Credits",
+            "balanceRemaining": 0,
+            "balanceUnit": "Credits",
+            "resourcePackages": [
+                {"label": "附加资源包", "remaining": 0, "total": 1000, "unit": "Credits"},
+                {"label": "专属资源包", "remaining": 1995, "total": 2000, "unit": "Credits"}
+            ],
+            "secondaryWindows": [],
+            "remainingDays": 30,
+            "updatedAt": "2026-11-09T12:00:00Z"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(WidgetSnapshot.self, from: Data(json.utf8))
+
+        // 应以 resourcePackages 为准，不重复重建
+        try Expect.equal(snapshot.resourcePackages.count, 2)
+        try Expect.equal(snapshot.resourcePackages[0].label, "附加资源包")
+        try Expect.equal(snapshot.resourcePackages[1].label, "专属资源包")
+        // balanceRemaining 保留原值（第一块的 remaining）
+        try Expect.equal(snapshot.balanceRemaining, 0)
+    }
+
+    /// QuotaSnapshot 同时有 resourcePackages 和 balance 时以 resourcePackages 为准
+    static func testQuotaSnapshotBothFieldsPriority() throws {
+        let json = """
+        {
+            "planName": "专业版",
+            "windows": [],
+            "balance": {"remaining": 100, "total": 500, "unit": "Credits"},
+            "resourcePackages": [
+                {"balance": {"remaining": 0, "total": 1000, "unit": "Credits", "label": "附加资源包"}},
+                {"balance": {"remaining": 1995, "total": 2000, "unit": "Credits", "label": "专属资源包"}}
+            ],
+            "updatedAt": "2026-11-09T12:00:00Z"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(QuotaSnapshot.self, from: Data(json.utf8))
+
+        // 应以 resourcePackages 为准
+        try Expect.equal(snapshot.resourcePackages.count, 2)
+        try Expect.equal(snapshot.resourcePackages[0].label, "附加资源包")
+        try Expect.equal(snapshot.resourcePackages[1].label, "专属资源包")
+        // balance 计算属性应返回第一块
+        try Expect.equal(snapshot.balance?.remaining, 0)
+    }
+
+    /// QuotaSnapshot resourcePackages 为空数组且 balance 有值时重建单块
+    static func testQuotaSnapshotEmptyPackagesWithBalance() throws {
+        let json = """
+        {
+            "windows": [],
+            "balance": {"remaining": 110.5, "total": null, "unit": "CNY", "label": "账户余额"},
+            "resourcePackages": [],
+            "updatedAt": "2026-11-09T12:00:00Z"
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(QuotaSnapshot.self, from: Data(json.utf8))
+
+        // resourcePackages 为空数组时，应从 balance 重建单块
+        try Expect.equal(snapshot.resourcePackages.count, 1)
+        try Expect.equal(snapshot.resourcePackages[0].remaining, 110.5)
+        try Expect.equal(snapshot.resourcePackages[0].unit, "CNY")
+        try Expect.equal(snapshot.resourcePackages[0].label, "账户余额")
+    }
 }
 
 enum AppSettingsTests {
     static let suite = TestSuite("启用来源迁移", [
         ("旧版本升级时并入已有凭据的来源", testMigratesCredentialedProviders),
         ("共享列表存在时不再自动启用凭据来源", testSharedListWins),
-        ("本地列表优先于共享列表", testStoredListWins),
+        ("共享列表优先，避免旧默认值把已关闭来源写回", testSharedListOverridesStaleDefaults),
         ("重复和未知 id 会被清掉", testDeduplicates),
     ])
 
@@ -189,12 +366,13 @@ enum AppSettingsTests {
         try Expect.equal(resolved.map(\.rawValue), ["qwen-token-plan"])
     }
 
-    static func testStoredListWins() throws {
+    static func testSharedListOverridesStaleDefaults() throws {
+        // UserDefaults 还留着千问，共享列表已经把它关掉：以共享列表为准。
         let resolved = AppSettings.resolveInitialProviderIDs(
-            stored: ["cursor"],
-            shared: ["qwen-token-plan"],
-            credentialed: [])
-        try Expect.equal(resolved.map(\.rawValue), ["cursor"])
+            stored: ["qwen-token-plan"],
+            shared: ["cursor", "deepseek", "qoder"],
+            credentialed: [ProviderID("qwen-token-plan")])
+        try Expect.equal(resolved.map(\.rawValue), ["cursor", "deepseek", "qoder"])
     }
 
     static func testDeduplicates() throws {

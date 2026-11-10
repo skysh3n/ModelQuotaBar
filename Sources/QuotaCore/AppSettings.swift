@@ -34,12 +34,12 @@ public final class AppSettings {
         persist()
     }
 
-    /// 合并「UserDefaults 里的启用列表」「共享目录里的启用列表」「已有凭据的来源」。
+    /// 合并「共享目录里的启用列表」「UserDefaults 里的启用列表」「已有凭据的来源」。
     ///
-    /// - 共享列表存在时以它/本地列表为准，不再自动启用别的来源。
-    /// - 共享列表不存在说明是旧版本升级：把已有凭据的来源并进来，避免
-    ///   「主界面只启用千问、小组件却按凭据显示 Cursor/DeepSeek」的两套真相。
-    /// - 重复项和未知 id 一并清掉。
+    /// 共享列表是主应用和小组件都能读到的那一份，存在时以它为准。否则旧的
+    /// UserDefaults 会在下次启动把已关闭的来源写回去，小组件又把通义千问显示出来。
+    /// 共享列表不存在才是旧版本升级：用本地列表，并把已有凭据的来源并进来。
+    /// 重复项和未知 id 一并清掉。
     nonisolated static func resolveInitialProviderIDs(
         stored: [String]?,
         shared: [String]?,
@@ -49,7 +49,7 @@ public final class AppSettings {
         var seen = Set<ProviderID>()
         var result: [ProviderID] = []
 
-        for raw in (stored ?? shared ?? []) {
+        for raw in (shared ?? stored ?? []) {
             let id = ProviderID(rawValue: raw)
             guard known.contains(id), seen.insert(id).inserted else { continue }
             result.append(id)
@@ -85,6 +85,8 @@ public final class AppSettings {
 
     private func persist() {
         defaults.set(enabledProviderIDs.map(\.rawValue), forKey: Key.enabledProviders)
+        // 不强制刷到磁盘的话，cfprefsd 可能一直留着旧的启用列表，下次启动又把已关闭的来源写回去。
+        defaults.synchronize()
         SharedStore.saveEnabledProviderIDs(enabledProviderIDs.map(\.rawValue))
     }
 }

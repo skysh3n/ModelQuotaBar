@@ -57,6 +57,14 @@ public final class QuotaStore {
         results.contains { $0.snapshot != nil }
     }
 
+    /// 启用列表变化后立刻按「仍启用」重写小组件缓存。
+    ///
+    /// 不能等这一轮网络刷新结束：否则桌面上的小组件会继续显示刚关掉的来源。
+    public func alignWidgetWithSettings() {
+        syncWithSettings()
+        publishToWidget()
+    }
+
     /// 与当前启用列表对齐结果数组，保留已有数据避免刷新时闪烁；
     /// 新启用的来源先拿本地缓存顶上。
     public func syncWithSettings() {
@@ -179,16 +187,61 @@ public final class QuotaStore {
     /// 只保留「仍启用且凭据完整」的来源：停用来源、清空凭据后不再留下旧快照；
     /// 抓取失败但凭据还在的保留上一次成功数据，避免小组件被洗成空状态。
     /// 内容真的变化时才重载小组件；只有时间戳变化时仍写盘（供缓存时效判断）。
-    private func publishToWidget() {
-        let disk = SharedStore.loadSnapshots()
+    ///
+    /// 凭据文件读失败时（loadFailed）：跳过写盘，保留 disk 原样，不触发 onWidgetDataChanged。
+    /// 这样小组件继续显示旧数据，而不是被洗成空状态。
+    func publishToWidget() {
+        publishToWidget(
+            credentialFileURL: nil,
+            legacyCredentialFileURL: nil,
+            sharedStoreFileURL: nil)
+    }
+
+    /// 内部变体：允许注入凭据文件路径和共享存储路径，供测试使用。
+    /// nil 表示使用默认路径（生产路径），非 nil 表示使用注入路径（测试路径）。
+    func publishToWidget(
+        credentialFileURL: URL?,
+        legacyCredentialFileURL: URL?,
+        sharedStoreFileURL: URL?
+    ) {
+        // nil 时使用默认路径，非 nil 时使用注入路径
+        let disk: [WidgetSnapshot]
+        if let url = sharedStoreFileURL {
+            disk = SharedStore.loadSnapshots(from: url)
+        } else {
+            disk = SharedStore.loadSnapshots()
+        }
+
         let activeIDs = Set(settings.activeProviders.map(\.id.rawValue))
-        let configuredIDs = Set(ProviderRegistry.all
-            .filter { provider in
-                activeIDs.contains(provider.id.rawValue)
-                    && CredentialStore.loadCredential(for: provider.id)
-                        .isComplete(for: provider.credentialFields)
+
+        // 逐个来源检查凭据，区分「读失败」和「真的没凭据」
+        var configuredIDs: Set<String> = []
+        var anyLoadFailed = false
+        for provider in ProviderRegistry.all where activeIDs.contains(provider.id.rawValue) {
+            let (credential, loadFailed): (ProviderCredential, Bool)
+            if let credURL = credentialFileURL {
+                // 注入路径：使用指定的凭据文件
+                (credential, loadFailed) = CredentialStore.loadCredentialWithStatus(
+                    for: provider.id,
+                    from: credURL,
+                    legacyURL: legacyCredentialFileURL)
+            } else {
+                // 默认路径：使用 CredentialStore 的默认文件位置
+                (credential, loadFailed) = CredentialStore.loadCredentialWithStatus(for: provider.id)
             }
-            .map(\.id.rawValue))
+
+            if loadFailed {
+                anyLoadFailed = true
+                // 读失败时保守保留该来源（不加入 configuredIDs，但也不主动丢弃）
+            } else if credential.isComplete(for: provider.credentialFields) {
+                configuredIDs.insert(provider.id.rawValue)
+            }
+        }
+
+        // 凭据读失败且 disk 非空时：跳过写盘，保留旧数据，不触发刷新
+        if anyLoadFailed && !disk.isEmpty {
+            return
+        }
 
         let fresh = results.compactMap { result -> WidgetSnapshot? in
             guard let snapshot = result.snapshot else { return nil }
@@ -204,7 +257,11 @@ public final class QuotaStore {
 
         let contentChanged = !SharedStore.snapshotsHaveSameContent(merged, disk)
         if merged != disk {
-            SharedStore.save(merged)
+            if let url = sharedStoreFileURL {
+                SharedStore.save(merged, to: url)
+            } else {
+                SharedStore.save(merged)
+            }
         }
         if contentChanged {
             onWidgetDataChanged?()

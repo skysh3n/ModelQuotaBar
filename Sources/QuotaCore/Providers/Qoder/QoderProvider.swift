@@ -8,7 +8,8 @@ import Foundation
 /// - `GET /api/v1/me`：用户基本信息（昵称、邮箱）。
 /// - `GET /api/v1/me/userplan`：当前订阅套餐（档位、计费周期、到期/刷新时间）。
 /// - `GET /api/v2/me/usages/big_model_credits`：Credits 配额详情，
-///   包含 plan_quota（套餐内月度配额）和 resource_package_quota（附加资源包）。
+///   包含 plan_quota（套餐内月度配额）、resource_package_quota（附加资源包）
+///   和 dedicated_resource_package_quota（专属资源包）。
 ///
 /// 鉴权走阿里云 SSO，但业务域名下的会话凭据是 `qoder_session_cookie`：
 /// SSO 登录跳回 qoder.com.cn 时才下发，接口只认它。
@@ -17,7 +18,7 @@ public enum QoderProvider: QuotaProvider {
         id: ProviderID("qoder"),
         vendor: "Qoder CN",
         plan: "Credits 用量",
-        summary: "查询 Qoder CN 当前订阅周期的 Credits 配额与附加资源包剩余。",
+        summary: "查询 Qoder CN 当前订阅周期的 Credits 配额、附加资源包与专属资源包剩余。",
         consoleURL: URL(string: "https://qoder.com.cn/account/usage"),
         consoleHint:
             "两种获取方式任选其一：\n" +
@@ -164,7 +165,7 @@ public enum QoderProvider: QuotaProvider {
         let creditsDict = credits as? [String: Any]
 
         var windows: [QuotaWindow] = []
-        var balance: CreditBalance?
+        var resourcePackages: [ResourcePackageInfo] = []
 
         // 套餐内月度配额
         if let planQuota = creditsDict?["plan_quota"] as? [String: Any],
@@ -182,16 +183,27 @@ public enum QoderProvider: QuotaProvider {
                 unit: "Credits"))
         }
 
-        // 附加资源包剩余
+        // 附加资源包（resource_package_quota）
         if let rpQuota = creditsDict?["resource_package_quota"] as? [String: Any],
-           let summary = rpQuota["quota_summary"] as? [String: Any],
-           let remaining = JSONSearch.number(summary["remaining_value"])
+           let packageInfo = parseResourcePackage(
+               quota: rpQuota,
+               defaultLabel: "附加资源包",
+               sourceHint: "RESOURCE_PACKAGE")
         {
-            let total = JSONSearch.number(summary["limit_value"])
-            balance = CreditBalance(remaining: remaining, total: total, unit: "Credits")
+            resourcePackages.append(packageInfo)
         }
 
-        guard !windows.isEmpty || balance != nil else {
+        // 专属资源包（dedicated_resource_package_quota）
+        if let drpQuota = creditsDict?["dedicated_resource_package_quota"] as? [String: Any],
+           let packageInfo = parseResourcePackage(
+               quota: drpQuota,
+               defaultLabel: "专属资源包",
+               sourceHint: "DEDICATED_RESOURCE_PACKAGE")
+        {
+            resourcePackages.append(packageInfo)
+        }
+
+        guard !windows.isEmpty || !resourcePackages.isEmpty else {
             throw QuotaError.decoding("响应里没有配额数据")
         }
 
@@ -199,9 +211,166 @@ public enum QoderProvider: QuotaProvider {
             accountLabel: accountLabel,
             planName: planName,
             windows: windows,
-            balance: balance,
+            resourcePackages: resourcePackages,
             expiresAt: expiresAt,
             updatedAt: now)
+    }
+
+    // MARK: - 资源包解析
+
+    /// 解析一块资源包（附加 / 专属），返回 nil 表示该块无有效数据。
+    ///
+    /// - Parameters:
+    ///   - quota: `resource_package_quota` 或 `dedicated_resource_package_quota` 的字典。
+    ///   - defaultLabel: display_labels 取不到标题时的兜底文案。
+    ///   - sourceHint: 用于按 source 字段推断标题的提示。
+    private static func parseResourcePackage(
+        quota: [String: Any],
+        defaultLabel: String,
+        sourceHint: String
+    ) -> ResourcePackageInfo? {
+        // 优先从 quota_summary 取汇总；缺失时退化到 quota_detail 求和。
+        let summary = quota["quota_summary"] as? [String: Any]
+        let detail = quota["quota_detail"] as? [Any] ?? []
+
+        let remaining: Double?
+        let total: Double?
+        let unit: String
+
+        if let summary,
+           let r = JSONSearch.number(summary["remaining_value"])
+        {
+            remaining = r
+            total = JSONSearch.number(summary["limit_value"])
+            unit = (summary["unit"] as? String) ?? "credits"
+        } else if !detail.isEmpty {
+            // 退化：把 detail 里每条的 remaining / limit 加起来。
+            var sumRemaining: Double = 0
+            var sumTotal: Double = 0
+            var hasData = false
+            for entry in detail {
+                guard let item = entry as? [String: Any] else { continue }
+                if let r = JSONSearch.number(item["remaining_value"]) {
+                    sumRemaining += r
+                    hasData = true
+                }
+                if let l = JSONSearch.number(item["limit_value"]) {
+                    sumTotal += l
+                }
+            }
+            guard hasData else { return nil }
+            remaining = sumRemaining
+            total = sumTotal > 0 ? sumTotal : nil
+            unit = "credits"
+        } else {
+            return nil
+        }
+
+        // 全零且无明细时不塞假包。
+        if remaining == 0, (total == nil || total == 0), detail.isEmpty {
+            return nil
+        }
+
+        // 标题：优先 display_labels → 按 source 映射 → 兜底 defaultLabel。
+        let label = extractTitle(from: detail, defaultLabel: defaultLabel, sourceHint: sourceHint)
+
+        // 到期时间：取 detail 里最晚的 expires_at（毫秒时间戳）。
+        let expiresAt = extractLatestExpiresAt(from: detail)
+
+        return ResourcePackageInfo(
+            remaining: remaining ?? 0,
+            total: total,
+            unit: unit.uppercased() == "CREDITS" ? "Credits" : unit,
+            label: label,
+            expiresAt: expiresAt)
+    }
+
+    /// 从 quota_detail 里提取展示标题。
+    ///
+    /// 优先级：
+    /// 1. display_labels 中 dimension=title 的 value_i18n.zh-CN
+    /// 2. display_labels 中 dimension=title 的 value_i18n.en-US
+    /// 3. display_labels 中 dimension=title 的 value
+    /// 4. 按 source 字段映射中文名
+    /// 5. 兜底 defaultLabel
+    private static func extractTitle(
+        from detail: [Any],
+        defaultLabel: String,
+        sourceHint: String
+    ) -> String {
+        // 尝试从任意一条 detail 里取 display_labels。
+        for entry in detail {
+            guard let item = entry as? [String: Any],
+                  let labels = item["display_labels"] as? [Any]
+            else { continue }
+
+            for labelEntry in labels {
+                guard let label = labelEntry as? [String: Any],
+                      let dimension = label["dimension"] as? String,
+                      dimension == "title"
+                else { continue }
+
+                // 优先 zh-CN
+                if let i18n = label["value_i18n"] as? [String: String],
+                   let zhCN = i18n["zh-CN"], !zhCN.isEmpty
+                {
+                    return zhCN
+                }
+                // 退化 en-US
+                if let i18n = label["value_i18n"] as? [String: String],
+                   let enUS = i18n["en-US"], !enUS.isEmpty
+                {
+                    return enUS
+                }
+                // 退化 value
+                if let value = label["value"] as? String, !value.isEmpty {
+                    return value
+                }
+            }
+        }
+
+        // 按 source 映射
+        for entry in detail {
+            guard let item = entry as? [String: Any],
+                  let source = item["source"] as? String
+            else { continue }
+            return titleForSource(source, default: defaultLabel)
+        }
+
+        // 兜底：按 sourceHint 映射
+        return titleForSource(sourceHint, default: defaultLabel)
+    }
+
+    /// 按 source 字段推断中文标题。
+    private static func titleForSource(_ source: String, default defaultLabel: String) -> String {
+        switch source {
+        case "DEDICATED_RESOURCE_PACKAGE":
+            return "专属资源包"
+        case "RESOURCE_PACKAGE_SOURCE_BONUS",
+             "RESOURCE_PACKAGE_SOURCE_CARRY_OVER":
+            return "附加资源包"
+        default:
+            if source.hasPrefix("RESOURCE_PACKAGE_SOURCE_") {
+                return "附加资源包"
+            }
+            return defaultLabel
+        }
+    }
+
+    /// 从 quota_detail 里取最晚的 expires_at（毫秒时间戳）。
+    private static func extractLatestExpiresAt(from detail: [Any]) -> Date? {
+        var latest: Date?
+        for entry in detail {
+            guard let item = entry as? [String: Any],
+                  let raw = JSONSearch.number(item["expires_at"]),
+                  raw > 0
+            else { continue }
+            let date = Date(timeIntervalSince1970: raw / 1000)
+            if latest == nil || date > latest! {
+                latest = date
+            }
+        }
+        return latest
     }
 
     static func displayName(forPlanTier tier: String?) -> String {
