@@ -289,3 +289,49 @@ enum AliyunGatewayNetworkTests {
         }
     }
 }
+
+/// 登录弹窗抓到候选 Cookie 后会先问一次接口；未登录的匿名票必须被挡下。
+enum QoderSessionValidationTests {
+    static let suite = TestSuite("Qoder CN · 会话校验", [
+        ("有效会话校验通过", testAcceptsValidSession),
+        ("401 时校验不通过", testRejectsExpiredSession),
+        ("网络错误时校验不通过", testRejectsNetworkFailure),
+    ])
+
+    static func testAcceptsValidSession() throws {
+        defer { MockURLProtocol.handler = nil }
+        MockURLProtocol.handler = { request in
+            mockResponse(200, body: #"{"id":"user-1","name":"skyshen"}"#, url: request.url!)
+        }
+        let ok = try runAsync {
+            await QoderProvider.validateSession(cookie: "session-abc", session: mockSession())
+        }
+        try Expect.isTrue(ok)
+
+        let request = try Expect.notNil(MockURLProtocol.lastRequest)
+        try Expect.equal(request.url?.absoluteString, "https://qoder.com.cn/api/v1/me")
+        try Expect.equal(
+            request.value(forHTTPHeaderField: "Cookie"),
+            "qoder_session_cookie=session-abc")
+    }
+
+    static func testRejectsExpiredSession() throws {
+        defer { MockURLProtocol.handler = nil }
+        MockURLProtocol.handler = { request in
+            mockResponse(401, body: "{}", url: request.url!)
+        }
+        let ok = try runAsync {
+            await QoderProvider.validateSession(cookie: "expired", session: mockSession())
+        }
+        try Expect.isTrue(!ok)
+    }
+
+    static func testRejectsNetworkFailure() throws {
+        defer { MockURLProtocol.handler = nil }
+        MockURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+        let ok = try runAsync {
+            await QoderProvider.validateSession(cookie: "session-abc", session: mockSession())
+        }
+        try Expect.isTrue(!ok)
+    }
+}

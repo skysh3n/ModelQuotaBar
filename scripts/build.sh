@@ -47,6 +47,11 @@ args=(
   build
 )
 
+# WidgetKit 按 CFBundleVersion 判断扩展有没有更新。工程里写死的版本号会让
+# 系统一直复用旧扩展（新代码、新枚举都不生效），所以每次构建生成一个新的构建号。
+BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M%S)}"
+args+=("CURRENT_PROJECT_VERSION=$BUILD_NUMBER")
+
 if [ -n "${TEAM_ID:-}" ]; then
   args+=("DEVELOPMENT_TEAM=$TEAM_ID")
 fi

@@ -12,20 +12,46 @@ struct RefreshQuotaIntent: AppIntent {
     /// 必须为 false：否则系统会为了跑 intent 激活/打开主应用，桌面小组件点刷新就会弹主界面。
     static var openAppWhenRun: Bool { false }
 
-    /// 当前小组件勾选的来源。没带时退回默认的三个。
-    @Parameter(title: "显示来源", default: [.qwen, .deepseek, .cursor])
-    var sources: [WidgetSource]
+    // 用一组 Bool 而不是 `[WidgetSource]`：数组型 AppEnum 参数在宿主和扩展之间
+    // 往返时会解码失败、静默回落到默认值（详细说明见 SelectSourcesIntent）。
+    @Parameter(title: "通义千问", default: true)
+    var showQwen: Bool
+
+    @Parameter(title: "DeepSeek", default: true)
+    var showDeepSeek: Bool
+
+    @Parameter(title: "Cursor", default: true)
+    var showCursor: Bool
+
+    @Parameter(title: "Qoder CN", default: true)
+    var showQoder: Bool
 
     init() {}
 
     init(sources: [WidgetSource]) {
         self.init()
-        self.sources = sources
+        self.showQwen = sources.contains(.qwen)
+        self.showDeepSeek = sources.contains(.deepseek)
+        self.showCursor = sources.contains(.cursor)
+        self.showQoder = sources.contains(.qoder)
+    }
+
+    /// 顺序固定为 `WidgetSource.allCases`，与配置意图保持一致。
+    var sources: [WidgetSource] {
+        WidgetSource.allCases.filter { source in
+            switch source {
+            case .qwen: showQwen
+            case .deepseek: showDeepSeek
+            case .cursor: showCursor
+            case .qoder: showQoder
+            }
+        }
     }
 
     func perform() async throws -> some IntentResult {
         let available = WidgetSource.availableSources()
-        let ids = Set(WidgetSource.effectiveDisplaySources(sources, available: available).map(\.rawValue))
+        let selected = WidgetSource.displaySources(sources, available: available)
+        let ids = Set(selected.map(\.rawValue))
         let fresh = await QuotaFetcher.fetchWidgetSnapshots(ids: ids)
         // 只保留仍可用（已启用 + 凭据完整）的来源；一个都没有时连缓存一起清掉。
         SharedStore.saveMerging(fresh, keeping: Set(available.map(\.rawValue)))
@@ -46,33 +72,25 @@ enum WidgetReloader {
 ///
 /// 放在 QuotaCore（主应用和小组件扩展都编译它），而不是只放扩展里：
 /// macOS 的「编辑小组件」入口需要配置意图在主应用这一侧也能被发现。
-/// 新增厂商时在这里加 case，并同步 `matches` 与 `caseDisplayRepresentations`。
-enum WidgetSource: String, Codable, CaseIterable, AppEnum {
+/// 新增厂商时在这里加 case，并同步 `matches`、`displayName` 和配置意图里的开关。
+///
+/// **最多显示两个来源**：中尺寸卡片并排显示时，三个来源会太挤；小尺寸只取第一个。
+/// 勾选超过两个时自动截断，保留前两个。
+enum WidgetSource: String, CaseIterable {
     case qwen = "qwen-token-plan"
     case deepseek = "deepseek"
     case cursor = "cursor"
+    case qoder = "qoder"
 
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "显示来源")
-    static let caseDisplayRepresentations: [WidgetSource: DisplayRepresentation] = [
-        .qwen: DisplayRepresentation(
-            title: "通义千问",
-            subtitle: "Token Plan 额度",
-            image: .init(systemName: "sparkles")),
-        .deepseek: DisplayRepresentation(
-            title: "DeepSeek",
-            subtitle: "账户余额",
-            image: .init(systemName: "yensign.circle")),
-        .cursor: DisplayRepresentation(
-            title: "Cursor",
-            subtitle: "订阅用量",
-            image: .init(systemName: "cursorarrow.rays")),
-    ]
+    /// 小组件最多显示的来源数量。中尺寸并排显示时，三个来源会太挤。
+    static let maxSourcesPerWidget = 2
 
     var displayName: String {
         switch self {
         case .qwen: "通义千问"
         case .deepseek: "DeepSeek"
         case .cursor: "Cursor"
+        case .qoder: "Qoder CN"
         }
     }
 
@@ -118,6 +136,17 @@ enum WidgetSource: String, Codable, CaseIterable, AppEnum {
         sources.filter { available.contains($0) }
     }
 
+    /// 实际参与显示/抓取的来源：**先按可用性过滤，再截到上限**。
+    ///
+    /// 顺序不能反：保存的勾选里可能还留着已停用的旧来源（例如千问），它若排在
+    /// 前面，提前截断会把后面的可用来源挤掉，表现为「勾了两个只显示一个」。
+    static func displaySources(
+        _ sources: [WidgetSource],
+        available: [WidgetSource]
+    ) -> [WidgetSource] {
+        Array(effectiveDisplaySources(sources, available: available).prefix(maxSourcesPerWidget))
+    }
+
     /// 按勾选的来源过滤快照，保持快照本来的顺序。选中的来源没数据时不拿别的来源顶替。
     static func select(
         _ sources: [WidgetSource],
@@ -147,7 +176,7 @@ enum WidgetSource: String, Codable, CaseIterable, AppEnum {
         maxAge: TimeInterval = 14 * 60,
         available: [WidgetSource]
     ) -> Bool {
-        let effective = effectiveDisplaySources(sources, available: available)
+        let effective = displaySources(sources, available: available)
         guard !effective.isEmpty else { return false }
 
         let missing = effective.contains { source in
@@ -155,38 +184,54 @@ enum WidgetSource: String, Codable, CaseIterable, AppEnum {
         }
         if missing { return true }
 
-        let selected = select(sources, from: snapshots, available: available)
+        let selected = select(effective, from: snapshots, available: available)
         guard let oldest = selected.map(\.updatedAt).min() else { return true }
         return now.timeIntervalSince(oldest) > maxAge
     }
 }
 
-/// 勾选列表的动态选项：只给出主界面仍启用（有凭据）的供应商。
-struct AvailableWidgetSourcesProvider: DynamicOptionsProvider {
-    func results() async throws -> [WidgetSource] {
-        let available = WidgetSource.availableSources()
-        // 一个都没配时仍列出全部，方便用户知道有哪些来源；点进去会是空数据。
-        return available.isEmpty ? Array(WidgetSource.allCases) : available
-    }
-}
-
-/// 小组件的配置意图：**多选**来源。
+/// 小组件的配置意图：每个来源一个开关（最多显示两个）。
 ///
 /// 配置项绑定在「小组件类型」上、拿不到尺寸信息，所以做不到「小尺寸单选、中尺寸多选」
 /// 那种随尺寸变化的选项（试过拆成两个小组件类型，但组件库是按 App 分组的，
-/// 拆开也看不出来，反而多一层）。统一用一个多选列表：
-/// 小尺寸取勾选里的第一个，中尺寸并列显示全部勾选的；全部取消则显示空状态。
+/// 拆开也看不出来，反而多一层）。统一用一组开关：
+/// 小尺寸取勾选里的第一个，中尺寸并列显示全部勾选的（最多两个）；全部关闭则显示空状态。
+///
+/// **为什么不用 `[WidgetSource]` 多选参数**：macOS 的 WidgetKit 宿主会把多选结果
+/// 存成带显示信息的选项字典（value/title/symbol/...），扩展侧解码这个数组时失败，
+/// 静默回落到声明里的默认值——用户勾了两个来源却看到默认的三个。拆成 Bool 后
+/// 参数能正确往返（实测宿主保存的 false 能在扩展侧读到）。
 struct SelectSourcesIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "选择来源"
-    static let description = IntentDescription("小尺寸显示勾选的第一个来源，中尺寸并排显示全部勾选的来源；全部取消勾选时显示空状态。")
+    static let description = IntentDescription("打开要显示的来源：小尺寸显示第一个，中尺寸最多并排显示两个；全部关闭时显示空状态。")
 
-    @Parameter(
-        title: "显示来源",
-        default: [.qwen, .deepseek, .cursor],
-        optionsProvider: AvailableWidgetSourcesProvider())
-    var sources: [WidgetSource]
+    @Parameter(title: "通义千问", default: true)
+    var showQwen: Bool
+
+    @Parameter(title: "DeepSeek", default: true)
+    var showDeepSeek: Bool
+
+    @Parameter(title: "Cursor", default: true)
+    var showCursor: Bool
+
+    @Parameter(title: "Qoder CN", default: true)
+    var showQoder: Bool
+
+    /// 顺序固定为 `WidgetSource.allCases`，决定多个来源时的显示先后。
+    var sources: [WidgetSource] {
+        WidgetSource.allCases.filter { source in
+            switch source {
+            case .qwen: showQwen
+            case .deepseek: showDeepSeek
+            case .cursor: showCursor
+            case .qoder: showQoder
+            }
+        }
+    }
 
     func perform() async throws -> some IntentResult {
-        .result()
+        // 截断交给渲染层（timeline/snapshot），这里不改参数值：
+        // 在 WidgetConfigurationIntent 里回写参数可能让系统判为无效配置，小组件变空白。
+        return .result()
     }
 }

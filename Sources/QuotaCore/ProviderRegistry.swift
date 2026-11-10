@@ -8,6 +8,7 @@ public enum ProviderRegistry {
         QwenTokenPlanProvider.descriptor,
         DeepSeekProvider.descriptor,
         CursorProvider.descriptor,
+        QoderProvider.descriptor,
     ]
 
     public static func descriptor(for id: ProviderID) -> ProviderDescriptor? {
