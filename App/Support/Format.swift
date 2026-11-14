@@ -22,23 +22,31 @@ enum Format {
         return total * window.remainingRatio
     }
 
+    private static let relativeResetFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private static let absoluteFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日 HH:mm"
+        return formatter
+    }()
+
     /// `3 小时后重置` 这类相对时间。
     static func relativeReset(_ date: Date?, now: Date = Date()) -> String? {
         guard let date else { return nil }
         if date <= now { return "即将重置" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.unitsStyle = .short
         // 格式化结果本身已经带了「后」（如「3小时后」），这里只补动词。
-        return formatter.localizedString(for: date, relativeTo: now) + "重置"
+        return relativeResetFormatter.localizedString(for: date, relativeTo: now) + "重置"
     }
 
     /// `2026年10月11日 21:30` 这类绝对时间，用于「上次更新」。
     static func absolute(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "M月d日 HH:mm"
-        return formatter.string(from: date)
+        absoluteFormatter.string(from: date)
     }
 }
 

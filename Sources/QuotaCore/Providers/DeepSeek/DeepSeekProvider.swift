@@ -43,25 +43,10 @@ public enum DeepSeekProvider: QuotaProvider {
         request.timeoutInterval = 15
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw QuotaError.network(error.localizedDescription)
-        }
-
-        if let http = response as? HTTPURLResponse {
-            switch http.statusCode {
-            case 200..<300:
-                break
-            case 401, 403:
-                throw QuotaError.invalidCredential("API Key 被拒绝，请检查是否复制完整")
-            default:
-                throw QuotaError.network("HTTP \(http.statusCode)")
-            }
-        }
-
+        let (data, http) = try await ProviderHTTP.send(request, session: session)
+        try ProviderHTTP.validate(
+            http,
+            authFailure: .invalidCredential("API Key 被拒绝，请检查是否复制完整"))
         return try makeSnapshot(from: data, now: Date())
     }
 

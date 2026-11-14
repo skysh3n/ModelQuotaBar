@@ -55,21 +55,27 @@ if [ -x "$LSREGISTER" ]; then
     "$LSREGISTER" -u "$DIST_PATH" 2>/dev/null || true
   fi
 
-  # 从 dump 里找出同 bundle 但不等于安装目标的 path，逐条注销（含已不存在的历史记录）
+  # 从 dump 里按 bundle id 找出同包的其他注册记录，逐条注销（含已删除目录的历史记录）。
+  # 不能按 .app 文件名过滤：历史产物目录叫 ModelQuotaBar.app，
+  # 而小组件列表读的是承载 App 的 CFBundleName，残留的旧记录会让列表显示过时的名字。
   echo "  清理同 bundle 的多余注册记录..."
-  while IFS= read -r line; do
-    # 提取 path: 后面的路径（去掉末尾的 inode 号如 " (0x6850)"）
-    if [[ "$line" =~ path:\ *([^[:space:]].+?)[[:space:]]*\(0x[0-9a-f]+\)*[[:space:]]*$ ]]; then
-      reg_path="${BASH_REMATCH[1]}"
-      # 去掉首尾空白
-      reg_path="$(echo "$reg_path" | xargs)"
-      # 跳过安装目标本身
-      if [ "$reg_path" != "$DEST" ]; then
-        echo "  注销多余记录：$reg_path"
-        "$LSREGISTER" -u "$reg_path" 2>/dev/null || true
-      fi
-    fi
-  done < <("$LSREGISTER" -dump 2>/dev/null | grep -A2 "$APP_BUNDLE_NAME" | grep "path:" || true)
+  DUMP="$(mktemp)"
+  "$LSREGISTER" -dump 2>/dev/null > "$DUMP" || true
+  while IFS= read -r reg_path; do
+    [ -n "$reg_path" ] || continue
+    case "$reg_path" in
+      "$DEST" | "$DEST"/*) continue ;; # 安装目标及其扩展保留
+    esac
+    echo "  注销多余记录：$reg_path"
+    "$LSREGISTER" -u "$reg_path" 2>/dev/null || true
+  done < <(awk -v app='com.skysh3n.ModelQuotaBar' -v widget='com.skysh3n.ModelQuotaBar.widget' '
+    function flush() { if (path != "" && (id == app || id == widget)) print path }
+    /^-{20,}/ { flush(); path = ""; id = ""; next }
+    /^path:/ { p = $0; sub(/^path:[[:space:]]*/, "", p); sub(/[[:space:]]*\(0x[0-9a-f]+\)[[:space:]]*$/, "", p); path = p; next }
+    /^identifier:/ { i = $0; sub(/^identifier:[[:space:]]*/, "", i); id = i; next }
+    END { flush() }
+  ' "$DUMP")
+  rm -f "$DUMP"
 
   # 强制注册 /Applications 下的目标
   echo "  强制注册：$DEST"

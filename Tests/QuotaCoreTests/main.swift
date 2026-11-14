@@ -21,6 +21,7 @@ exit(TestRunner.run([
     CredentialLoadFailureTests.suite,
     QuotaFetcherSelectionTests.suite,
     QuotaFetcherMissingCredentialTests.suite,
+    ProviderHTTPTests.suite,
     SharedStoreExtraTests.suite,
     QwenExtraTests.suite,
     CursorExtraTests.suite,

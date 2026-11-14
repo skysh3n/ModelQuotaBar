@@ -36,3 +36,48 @@ enum QuotaFetcherMissingCredentialTests {
         try Expect.equal(names, [])
     }
 }
+
+enum ProviderHTTPTests {
+    static let suite = TestSuite("共用 HTTP 骨架", [
+        ("裸 Cookie 值补上键名", testCookieHeaderAddsName),
+        ("已带键名的 Cookie 原样保留", testCookieHeaderKeepsExisting),
+        ("登录页 HTML 当成会话过期", testHTMLLoginPageIsSessionExpired),
+        ("非法 JSON 仍是解析错误", testInvalidJSONIsDecoding),
+    ])
+
+    static func testCookieHeaderAddsName() throws {
+        try Expect.equal(
+            CookieHeader.withName("qoder_session_cookie", raw: "  abc  "),
+            "qoder_session_cookie=abc")
+    }
+
+    static func testCookieHeaderKeepsExisting() throws {
+        try Expect.equal(
+            CookieHeader.withName("qoder_session_cookie", raw: "qoder_session_cookie=abc"),
+            "qoder_session_cookie=abc")
+    }
+
+    static func testHTMLLoginPageIsSessionExpired() throws {
+        do {
+            _ = try ProviderHTTP.jsonObject(
+                from: Data("<html><body>login</body></html>".utf8),
+                sessionHTMLMarkers: ["<html"])
+            throw AssertionFailure(message: "应抛出会话过期", file: #file, line: #line)
+        } catch let error as QuotaError {
+            guard case .sessionExpired = error else {
+                throw AssertionFailure(message: "应为 sessionExpired，实际 \(error)", file: #file, line: #line)
+            }
+        }
+    }
+
+    static func testInvalidJSONIsDecoding() throws {
+        do {
+            _ = try ProviderHTTP.jsonObject(from: Data("not-json".utf8))
+            throw AssertionFailure(message: "应抛出解析错误", file: #file, line: #line)
+        } catch let error as QuotaError {
+            guard case .decoding = error else {
+                throw AssertionFailure(message: "应为 decoding，实际 \(error)", file: #file, line: #line)
+            }
+        }
+    }
+}

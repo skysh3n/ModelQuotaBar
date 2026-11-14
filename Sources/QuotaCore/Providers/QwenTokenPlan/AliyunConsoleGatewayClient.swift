@@ -44,40 +44,20 @@ struct AliyunConsoleGatewayClient: Sendable {
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
         request.setValue(Self.normalizedCookie(cookieHeader), forHTTPHeaderField: "Cookie")
         request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
-        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(BrowserIdentity.safariOnMac, forHTTPHeaderField: "User-Agent")
         request.setValue(region.consoleOrigin, forHTTPHeaderField: "Origin")
         request.setValue(region.consoleOrigin + "/", forHTTPHeaderField: "Referer")
         request.setValue(region.language, forHTTPHeaderField: "Accept-Language")
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw QuotaError.network(error.localizedDescription)
-        }
-
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            if http.statusCode == 401 || http.statusCode == 403 {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.network("HTTP \(http.statusCode)")
-        }
-
+        let (data, http) = try await ProviderHTTP.send(request, session: session)
+        try ProviderHTTP.validate(http, authFailure: .sessionExpired)
         guard !data.isEmpty else {
             throw QuotaError.decoding("服务端返回空响应")
         }
-        let payload: Any
-        do {
-            payload = try JSONSerialization.jsonObject(with: data)
-        } catch {
-            // 会话过期时控制台网关会直接回登录页 HTML，而不是 JSON 错误体。
-            let text = String(data: data, encoding: .utf8)?.lowercased() ?? ""
-            if text.contains("<html") || text.contains("login") || text.contains("signin") {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.decoding("响应不是合法 JSON")
-        }
+        // 会话过期时控制台网关会直接回登录页 HTML，而不是 JSON 错误体。
+        let payload = try ProviderHTTP.jsonObject(
+            from: data,
+            sessionHTMLMarkers: ["<html", "login", "signin"])
 
         try Self.throwIfError(payload)
         return payload
@@ -87,10 +67,6 @@ struct AliyunConsoleGatewayClient: Sendable {
 
     /// 控制台产品代号，与百炼控制台自身请求保持一致。
     private static let consoleProduct = "sfm_bailian"
-
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
 
     /// 表单请求体。internal 是为了让单测直接检查信封字段。
     static func requestBody(

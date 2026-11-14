@@ -28,7 +28,7 @@ swiftc \
   -target "$(uname -m)-apple-macosx14.0" \
   -o "$BUILD/WidgetPreview" \
   "${core_sources[@]}" \
-  Widget/QuotaWidget.swift \
+  Widget/*.swift \
   scripts/WidgetPreview/main.swift
 
 echo "==> 打开预览窗口（关闭窗口退出），或 --png 导出离屏截图"

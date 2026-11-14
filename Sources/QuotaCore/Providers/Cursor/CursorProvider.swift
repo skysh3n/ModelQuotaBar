@@ -41,9 +41,6 @@ public enum CursorProvider: QuotaProvider {
 
     static let sessionCookieName = "WorkosCursorSessionToken"
     private static let baseURL = "https://cursor.com"
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
 
     public static func fetchSnapshot(credential: ProviderCredential) async throws -> QuotaSnapshot {
         guard let raw = credential["cookie"] else {
@@ -207,24 +204,9 @@ public enum CursorProvider: QuotaProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw QuotaError.network(error.localizedDescription)
-        }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            if http.statusCode == 401 || http.statusCode == 403 {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.network("HTTP \(http.statusCode)")
-        }
-        do {
-            return try JSONSerialization.jsonObject(with: data)
-        } catch {
-            throw QuotaError.decoding("响应不是合法 JSON")
-        }
+        let (data, http) = try await ProviderHTTP.send(request, session: .shared)
+        try ProviderHTTP.validate(http, authFailure: .sessionExpired)
+        return try ProviderHTTP.jsonObject(from: data)
     }
 
     /// 周期接口是否已经给出可用的百分比。
@@ -263,34 +245,13 @@ public enum CursorProvider: QuotaProvider {
         request.timeoutInterval = 45
         request.setValue(cookie, forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(BrowserIdentity.safariOnMac, forHTTPHeaderField: "User-Agent")
         request.setValue(baseURL, forHTTPHeaderField: "Origin")
         request.setValue(baseURL + "/dashboard", forHTTPHeaderField: "Referer")
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw QuotaError.network(error.localizedDescription)
-        }
-
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            if http.statusCode == 401 || http.statusCode == 403 {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.network("HTTP \(http.statusCode)")
-        }
-
-        do {
-            return try JSONSerialization.jsonObject(with: data)
-        } catch {
-            let text = String(data: data, encoding: .utf8)?.lowercased() ?? ""
-            if text.contains("<html") {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.decoding("响应不是合法 JSON")
-        }
+        let (data, http) = try await ProviderHTTP.send(request, session: .shared)
+        try ProviderHTTP.validate(http, authFailure: .sessionExpired)
+        return try ProviderHTTP.jsonObject(from: data, sessionHTMLMarkers: ["<html"])
     }
 
     // MARK: - 凭据
@@ -300,12 +261,8 @@ public enum CursorProvider: QuotaProvider {
     ///
     /// 已带键名的完整 Cookie 头也要编码：浏览器 / 开发者工具有时给出解码后的 `::`。
     static func normalizedCookie(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "::", with: "%3A%3A")
-        if trimmed.contains("\(sessionCookieName)=") {
-            return trimmed
-        }
-        return "\(sessionCookieName)=\(trimmed)"
+        let encoded = raw.replacingOccurrences(of: "::", with: "%3A%3A")
+        return CookieHeader.withName(sessionCookieName, raw: encoded)
     }
 
     /// 从 Cookie 里取出 `user_…::` 后面的 JWT。

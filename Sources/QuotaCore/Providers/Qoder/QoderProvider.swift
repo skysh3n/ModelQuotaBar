@@ -44,9 +44,6 @@ public enum QoderProvider: QuotaProvider {
     ]
 
     private static let baseURL = "https://qoder.com.cn"
-    private static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
 
     public static func fetchSnapshot(credential: ProviderCredential) async throws -> QuotaSnapshot {
         try await fetchSnapshot(credential: credential, session: .shared)
@@ -81,49 +78,20 @@ public enum QoderProvider: QuotaProvider {
         request.timeoutInterval = 20
         request.setValue(cookie, forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(BrowserIdentity.safariOnMac, forHTTPHeaderField: "User-Agent")
         request.setValue(baseURL, forHTTPHeaderField: "Origin")
         request.setValue(baseURL + "/account/usage", forHTTPHeaderField: "Referer")
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw QuotaError.network(error.localizedDescription)
-        }
-
-        if let http = response as? HTTPURLResponse {
-            switch http.statusCode {
-            case 200..<300:
-                break
-            case 401, 403:
-                throw QuotaError.sessionExpired
-            default:
-                throw QuotaError.network("HTTP \(http.statusCode)")
-            }
-        }
-
-        do {
-            return try JSONSerialization.jsonObject(with: data)
-        } catch {
-            let text = String(data: data, encoding: .utf8)?.lowercased() ?? ""
-            if text.contains("<html") {
-                throw QuotaError.sessionExpired
-            }
-            throw QuotaError.decoding("响应不是合法 JSON")
-        }
+        let (data, http) = try await ProviderHTTP.send(request, session: session)
+        try ProviderHTTP.validate(http, authFailure: .sessionExpired)
+        return try ProviderHTTP.jsonObject(from: data, sessionHTMLMarkers: ["<html"])
     }
 
     // MARK: - 凭据
 
     /// 归一化 Cookie：用户只粘了值时补上键名。
     static func normalizedCookie(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.contains("qoder_session_cookie=") {
-            return trimmed
-        }
-        return "qoder_session_cookie=\(trimmed)"
+        CookieHeader.withName("qoder_session_cookie", raw: raw)
     }
 
     /// 用最轻的接口确认会话是否有效。
