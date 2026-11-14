@@ -176,6 +176,27 @@ enum WidgetSource: String, CaseIterable {
         }
     }
 
+    /// 登录过期的来源插到最前，挤进小组件可见的位置。
+    ///
+    /// 卡片最多画两个，过期来源如果排在后面，桌面上就完全看不到提示。
+    /// 这里只改展示顺序，不发起刷新。
+    static func promotingLoginExpired(
+        _ displayed: [WidgetSnapshot],
+        from allowed: [WidgetSnapshot],
+        limit: Int = maxSourcesPerWidget
+    ) -> [WidgetSnapshot] {
+        let expired = allowed.filter(\.hasError)
+        guard !expired.isEmpty else { return displayed }
+        var seen = Set<String>()
+        var result: [WidgetSnapshot] = []
+        for snapshot in expired + displayed {
+            guard seen.insert(snapshot.id).inserted else { continue }
+            result.append(snapshot)
+            if result.count == limit { break }
+        }
+        return result
+    }
+
     /// 刷新时允许写回缓存的来源。
     ///
     /// 返回 nil 表示这次不要动缓存：可用来源没解析出来，但主应用也没有明确「全部关掉」。
@@ -267,6 +288,7 @@ enum WidgetSource: String, CaseIterable {
     /// 缓存是否已经旧到值得再抓一次。尺寸切换会重跑 timeline，这里用来跳过无谓的网络请求。
     ///
     /// 没有可用来源时返回 false：没有东西可抓，别白跑一轮。
+    /// 登录过期只在小组件上提示，不因此提前刷新——重新登录要用户自己做。
     static func needsRefresh(
         _ snapshots: [WidgetSnapshot],
         sources: [WidgetSource],

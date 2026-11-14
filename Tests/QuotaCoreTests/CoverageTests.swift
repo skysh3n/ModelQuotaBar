@@ -170,6 +170,8 @@ enum QuotaStorePolicyTests {
         ("抓取失败但凭据还在时保留旧快照", testKeepsCachedForConfiguredFailure),
         ("一个可用来源都没有时清空", testEmptyConfiguredClears),
         ("新数据覆盖旧值并按注册顺序排列", testFreshOverridesAndOrders),
+        ("登录过期用提示盖掉旧额度", testSessionExpiredReplacesCachedQuota),
+        ("其它失败仍保留旧额度", testOtherFailureKeepsCachedQuota),
     ])
 
     private static func snapshot(
@@ -249,6 +251,58 @@ enum QuotaStorePolicyTests {
         try Expect.equal(
             try Expect.notNil(try Expect.notNil(merged.first).primaryRemainingRatio),
             0.9, accuracy: 1e-9)
+    }
+
+    static func testSessionExpiredReplacesCachedQuota() throws {
+        let metadata = ProviderMetadata(
+            id: ProviderID("qoder"),
+            vendor: "Qoder CN",
+            plan: "订阅用量",
+            summary: "test")
+        let expired = ProviderResult(
+            id: metadata.id,
+            metadata: metadata,
+            snapshot: nil,
+            error: .sessionExpired,
+            isLoading: false,
+            lastSuccessAt: nil)
+        let notice = try Expect.notNil(QuotaStore.widgetSnapshot(for: expired))
+        try Expect.equal(notice.errorMessage, WidgetSnapshot.loginExpiredMessage)
+        try Expect.isTrue(notice.hasError)
+        try Expect.equal(notice.primaryRemainingRatio, nil)
+
+        let merged = QuotaStore.widgetSnapshotsForPublish(
+            disk: [snapshot("qoder", ratio: 0.8)],
+            fresh: [notice],
+            configuredIDs: ["qoder"])
+        try Expect.equal(merged.map(\.id), ["qoder"])
+        try Expect.equal(merged.first?.errorMessage, WidgetSnapshot.loginExpiredMessage)
+        try Expect.equal(merged.first?.primaryRemainingRatio, nil)
+    }
+
+    static func testOtherFailureKeepsCachedQuota() throws {
+        let metadata = ProviderMetadata(
+            id: ProviderID("qoder"),
+            vendor: "Qoder CN",
+            plan: "订阅用量",
+            summary: "test")
+        let failed = ProviderResult(
+            id: metadata.id,
+            metadata: metadata,
+            snapshot: nil,
+            error: .network("超时"),
+            isLoading: false,
+            lastSuccessAt: nil)
+        try Expect.equal(QuotaStore.widgetSnapshot(for: failed), nil)
+
+        let merged = QuotaStore.widgetSnapshotsForPublish(
+            disk: [snapshot("qoder", ratio: 0.8)],
+            fresh: [],
+            configuredIDs: ["qoder"])
+        try Expect.equal(
+            try Expect.notNil(try Expect.notNil(merged.first).primaryRemainingRatio),
+            0.8, accuracy: 1e-9)
+        try Expect.equal(merged.first?.errorMessage, nil)
     }
 }
 

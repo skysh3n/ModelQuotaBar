@@ -69,12 +69,21 @@ public enum QuotaFetcher {
         let fetched = await withTaskGroup(of: WidgetSnapshot?.self) { group in
             for provider in providers {
                 group.addTask {
-                    let (snapshot, _) = await fetch(provider)
-                    guard let snapshot else { return nil }
-                    return snapshot.widgetSnapshot(
-                        id: provider.id,
-                        vendor: provider.metadata.vendor,
-                        title: provider.metadata.displayName)
+                    let (snapshot, error) = await fetch(provider)
+                    if let snapshot {
+                        return snapshot.widgetSnapshot(
+                            id: provider.id,
+                            vendor: provider.metadata.vendor,
+                            title: provider.metadata.displayName)
+                    }
+                    // 登录过期只记一笔提示，不在这里反复重试。
+                    if let error, case .sessionExpired = error {
+                        return WidgetSnapshot.loginExpired(
+                            id: provider.id,
+                            vendor: provider.metadata.vendor,
+                            title: provider.metadata.displayName)
+                    }
+                    return nil
                 }
             }
             var results: [WidgetSnapshot] = []

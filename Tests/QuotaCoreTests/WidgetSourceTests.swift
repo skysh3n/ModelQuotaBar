@@ -26,6 +26,7 @@ enum WidgetSourceTests {
         ("凭据读不到时仍用已启用的缓存", testWidgetDisplayFallsBackToCache),
         ("快照按启用顺序而不是文件顺序", testOrderedSnapshotsFollowsSources),
         ("可用来源解析失败时不清空缓存", testRefreshKeepIDsDoesNotWipeCache),
+        ("登录过期来源会挤进可见位置", testLoginExpiredIsPromotedIntoView),
     ])
 
     private static let qwen = WidgetSnapshot(
@@ -345,5 +346,21 @@ enum WidgetSourceTests {
         try Expect.isTrue(WidgetSource.refreshKeepIDs(available: [], enabled: nil) == nil)
         try Expect.isTrue(
             WidgetSource.refreshKeepIDs(available: [], enabled: ["cursor", "deepseek"]) == nil)
+    }
+
+    static func testLoginExpiredIsPromotedIntoView() throws {
+        let expired = WidgetSnapshot.loginExpired(
+            id: ProviderID("qoder"),
+            vendor: "Qoder CN",
+            title: "Qoder CN Credits 用量")
+        let displayed = [cursor, deepseek]
+        let promoted = WidgetSource.promotingLoginExpired(
+            displayed,
+            from: displayed + [expired])
+        try Expect.equal(promoted.map(\.id), ["qoder", "cursor"])
+        try Expect.isTrue(try Expect.notNil(promoted.first).hasError)
+
+        let unchanged = WidgetSource.promotingLoginExpired(displayed, from: displayed)
+        try Expect.equal(unchanged.map(\.id), ["cursor", "deepseek"])
     }
 }

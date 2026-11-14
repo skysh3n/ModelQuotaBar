@@ -234,6 +234,12 @@ public struct WidgetSnapshot: Sendable, Identifiable, Hashable {
     public var remainingDays: Int?
     public var updatedAt: Date
 
+    /// 登录过期或凭据失效时的错误提示文案。
+    ///
+    /// 当此字段非空时，小组件应显示登录过期提示而非额度数据。
+    /// 典型值如「登录会话已失效，请重新登录」。
+    public var errorMessage: String?
+
     public init(
         id: String,
         vendor: String,
@@ -277,6 +283,36 @@ public struct WidgetSnapshot: Sendable, Identifiable, Hashable {
         self.secondaryWindows = secondaryWindows
         self.remainingDays = remainingDays
         self.updatedAt = updatedAt
+        self.errorMessage = nil
+    }
+
+    /// 创建一个表示登录过期/凭据失效的快照。
+    ///
+    /// 此快照不携带额度数据，仅用于在小组件上显示登录过期提示。
+    public init(
+        id: String,
+        vendor: String,
+        title: String? = nil,
+        planName: String? = nil,
+        errorMessage: String,
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.vendor = vendor
+        self.title = title
+        self.planName = planName
+        self.primaryTitle = nil
+        self.primaryRemainingRatio = nil
+        self.primaryResetsAt = nil
+        self.primaryTotalQuota = nil
+        self.primaryUnit = nil
+        self.balanceRemaining = nil
+        self.balanceUnit = nil
+        self.resourcePackages = []
+        self.secondaryWindows = []
+        self.remainingDays = nil
+        self.updatedAt = updatedAt
+        self.errorMessage = errorMessage
     }
 
     /// 小组件栏目标题：优先完整显示名，否则厂商名。
@@ -290,6 +326,11 @@ public struct WidgetSnapshot: Sendable, Identifiable, Hashable {
     /// 是否有任何资源包或余额数据。
     public var hasAnyBalance: Bool {
         !resourcePackages.isEmpty || balanceRemaining != nil
+    }
+
+    /// 是否为登录过期/错误状态。
+    public var hasError: Bool {
+        errorMessage != nil
     }
 
     /// 除 `updatedAt` 外内容是否相同。
@@ -308,6 +349,7 @@ public struct WidgetSnapshot: Sendable, Identifiable, Hashable {
             && resourcePackages == other.resourcePackages
             && secondaryWindows == other.secondaryWindows
             && remainingDays == other.remainingDays
+            && errorMessage == other.errorMessage
     }
 }
 
@@ -343,6 +385,7 @@ extension WidgetSnapshot: Codable {
         case balanceRemaining, balanceUnit
         case resourcePackages
         case secondaryWindows, remainingDays, updatedAt
+        case errorMessage
     }
 
     public init(from decoder: Decoder) throws {
@@ -361,6 +404,7 @@ extension WidgetSnapshot: Codable {
         secondaryWindows = try container.decodeIfPresent([WidgetWindow].self, forKey: .secondaryWindows) ?? []
         remainingDays = try container.decodeIfPresent(Int.self, forKey: .remainingDays)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
 
         // 新格式直接带 resourcePackages；旧格式只有 balanceRemaining/balanceUnit，需要重建单块。
         if let packages = try container.decodeIfPresent([WidgetResourcePackage].self, forKey: .resourcePackages),
@@ -396,6 +440,7 @@ extension WidgetSnapshot: Codable {
         try container.encode(secondaryWindows, forKey: .secondaryWindows)
         try container.encodeIfPresent(remainingDays, forKey: .remainingDays)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
     }
 }
 
@@ -500,6 +545,28 @@ public extension QuotaSnapshot {
                         resetsAt: $0.resetsAt)
                 },
             remainingDays: remainingDays,
+            updatedAt: updatedAt)
+    }
+}
+
+public extension WidgetSnapshot {
+    /// 小组件上的登录过期提示。只提醒用户去重新登录，不触发额外刷新。
+    static let loginExpiredMessage = "请打开应用重新登录"
+
+    /// 登录过期快照。不带额度数字，小组件据此画出提示。
+    static func loginExpired(
+        id: ProviderID,
+        vendor: String,
+        title: String? = nil,
+        planName: String? = nil,
+        updatedAt: Date = Date()
+    ) -> WidgetSnapshot {
+        WidgetSnapshot(
+            id: id.rawValue,
+            vendor: vendor,
+            title: title,
+            planName: planName,
+            errorMessage: loginExpiredMessage,
             updatedAt: updatedAt)
     }
 }

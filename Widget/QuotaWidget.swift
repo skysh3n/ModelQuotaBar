@@ -32,7 +32,9 @@ struct QuotaEntry: TimelineEntry {
         let display = WidgetSource.widgetDisplaySources(
             toggles: sources,
             cachedIDs: Set(allowed.map(\.id)))
-        return WidgetSource.orderedSnapshots(display, from: allowed)
+        let ordered = WidgetSource.orderedSnapshots(display, from: allowed)
+        // 过期来源即使不在前两个勾选里，也要占一个可见位置，否则桌面上没有提示。
+        return WidgetSource.promotingLoginExpired(ordered, from: allowed)
     }
 }
 
@@ -212,13 +214,19 @@ struct SmallWidgetView: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            WidgetSourceHeader(snapshot: snapshot)
-                .padding(
-                    .trailing,
-                    widgetSmallRowsUseFullWidth(snapshot) ? widgetRefreshClearance : 0)
-            Spacer(minLength: 0)
-            if let ratio = snapshot.primaryRemainingRatio {
+        if snapshot.hasError, let message = snapshot.errorMessage {
+            // 登录过期：显示错误提示而非额度数据
+            WidgetErrorView(vendor: snapshot.displayTitle, message: message)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.trailing, widgetRefreshClearance)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                WidgetSourceHeader(snapshot: snapshot)
+                    .padding(
+                        .trailing,
+                        widgetSmallRowsUseFullWidth(snapshot) ? widgetRefreshClearance : 0)
+                Spacer(minLength: 0)
+                if let ratio = snapshot.primaryRemainingRatio {
                 Text(widgetPercent(ratio))
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
                     .monospacedDigit()
@@ -300,6 +308,7 @@ struct SmallWidgetView: View {
         // 撑满并左上对齐。余额型内容窄，VStack 固有宽度小于卡片宽度时
         // SwiftUI 会把它居中，看起来就比有进度条的千问卡片往右偏。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
     }
 }
 
@@ -527,6 +536,17 @@ private struct SingleSourceMediumView: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
+        if snapshot.hasError {
+            WidgetErrorView(
+                vendor: snapshot.displayTitle,
+                message: snapshot.errorMessage ?? WidgetSnapshot.loginExpiredMessage)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            quotaBody
+        }
+    }
+
+    private var quotaBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             // 标题行
             WidgetSourceHeader(snapshot: snapshot)
@@ -700,14 +720,20 @@ private struct SourceColumn: View {
     }
 
     var body: some View {
-        Group {
-            if isBalanceOnly {
-                balanceColumn
-            } else {
-                usageColumn
+        if snapshot.hasError, let message = snapshot.errorMessage {
+            // 登录过期：显示错误提示而非额度数据
+            WidgetErrorView(vendor: snapshot.displayTitle, message: message)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            Group {
+                if isBalanceOnly {
+                    balanceColumn
+                } else {
+                    usageColumn
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// 标题 → 大余额 +「账户余额」紧挨 → 更新时间压底（与右边 Credits 齐平）。
@@ -869,6 +895,44 @@ struct EmptyWidgetView: View {
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
+    }
+}
+
+/// 登录过期错误提示视图。
+struct WidgetErrorView: View {
+    let vendor: String
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // 标题
+            Text(vendor)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            // 警告图标 + 错误文案
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.orange)
+                Text("登录已过期")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
+
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

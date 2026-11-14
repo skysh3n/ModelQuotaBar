@@ -168,9 +168,24 @@ public final class QuotaStore {
         SnapshotCache.save(cached, to: SnapshotCache.defaultURL)
     }
 
-    /// 小组件缓存发布策略：只保留仍启用且凭据完整的来源；抓取失败但凭据还在的
-    /// 保留上一次成功数据；停用/清空凭据的来源从缓存里消失。
+    /// 一条查询结果要写给小组件的快照。
     ///
+    /// 登录过期盖掉旧额度，只留重新登录的提示。其它失败返回 nil，调用方会保留上次成功数据。
+    nonisolated static func widgetSnapshot(for result: ProviderResult) -> WidgetSnapshot? {
+        if case .sessionExpired? = result.error {
+            return WidgetSnapshot.loginExpired(
+                id: result.id,
+                vendor: result.metadata.vendor,
+                title: result.metadata.displayName,
+                planName: result.snapshot?.planName)
+        }
+        guard let snapshot = result.snapshot else { return nil }
+        return snapshot.widgetSnapshot(
+            id: result.id,
+            vendor: result.metadata.vendor,
+            title: result.metadata.displayName)
+    }
+
     /// 纯函数，便于单测。
     nonisolated static func widgetSnapshotsForPublish(
         disk: [WidgetSnapshot],
@@ -185,7 +200,8 @@ public final class QuotaStore {
     /// 把最新快照写进共享容器，供小组件渲染。
     ///
     /// 只保留「仍启用且凭据完整」的来源：停用来源、清空凭据后不再留下旧快照；
-    /// 抓取失败但凭据还在的保留上一次成功数据，避免小组件被洗成空状态。
+    /// 网络失败但凭据还在的保留上一次成功数据，避免小组件被洗成空状态。
+    /// 登录过期例外：用提示快照盖掉旧额度，桌面小组件只提醒、不自己重登。
     /// 内容真的变化时才重载小组件；只有时间戳变化时仍写盘（供缓存时效判断）。
     ///
     /// 凭据文件读失败时（loadFailed）：跳过写盘，保留 disk 原样，不触发 onWidgetDataChanged。
@@ -243,13 +259,7 @@ public final class QuotaStore {
             return
         }
 
-        let fresh = results.compactMap { result -> WidgetSnapshot? in
-            guard let snapshot = result.snapshot else { return nil }
-            return snapshot.widgetSnapshot(
-                id: result.id,
-                vendor: result.metadata.vendor,
-                title: result.metadata.displayName)
-        }
+        let fresh = results.compactMap(Self.widgetSnapshot(for:))
         let merged = Self.widgetSnapshotsForPublish(
             disk: disk,
             fresh: fresh,
